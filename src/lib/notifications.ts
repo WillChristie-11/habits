@@ -135,10 +135,12 @@ export interface ItemResponse {
   action: 'done' | 'later' | 'skip' | 'start' | 'open';
   habitId: number | null;
   date: string | null;
+  /** what the notification was: item / morning / evening / timer */
+  type: string | null;
 }
 
 export function parseResponse(r: Notifications.NotificationResponse): ItemResponse {
-  const data = (r.notification.request.content.data ?? {}) as { habitId?: number; date?: string };
+  const data = (r.notification.request.content.data ?? {}) as { habitId?: number; date?: string; type?: string };
   const a = r.actionIdentifier;
   const action =
     a === ACTION_DONE
@@ -155,6 +157,7 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
     action,
     habitId: typeof data.habitId === 'number' ? data.habitId : null,
     date: typeof data.date === 'string' ? data.date : null,
+    type: typeof data.type === 'string' ? data.type : null,
   };
 }
 

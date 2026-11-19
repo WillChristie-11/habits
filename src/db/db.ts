@@ -408,3 +408,8 @@ export async function deleteEntry(id: number) {
   const db = await getDb();
   await db.runAsync('DELETE FROM entries WHERE id = ?', id);
 }
+
+export async function updateEntry(id: number, data: Record<string, string>) {
+  const db = await getDb();
+  await db.runAsync('UPDATE entries SET data = ?, updated_at = ? WHERE id = ?', JSON.stringify(data), new Date().toISOString(), id);
+}

@@ -57,6 +57,7 @@ interface Store {
   dismissMorning(): Promise<void>;
   saveEntry(type: EntryType, date: string, data: Record<string, string>, habitId?: number | null): Promise<void>;
   deleteEntry(id: number): Promise<void>;
+  updateEntry(id: number, data: Record<string, string>): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -198,6 +199,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       },
       async saveEntry(type, date, data, habitId = null) {
         await db.saveEntry(type, date, data, habitId);
+        setEntries(await db.loadEntries());
+      },
+      async updateEntry(id, data) {
+        await db.updateEntry(id, data);
         setEntries(await db.loadEntries());
       },
       async deleteEntry(id) {
