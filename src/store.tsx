@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
+import { AppearanceContext, DEFAULT_APPEARANCE, type Appearance } from './theme';
 import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { todayKey } from './lib/dates';
@@ -7,10 +8,12 @@ import type { DayRecord, Habit, HabitInput, RecordStatus } from './types';
 
 export interface Settings {
   feelingAutoDismiss: boolean;
+  appearance: Appearance;
 }
 
 const DEFAULT_SETTINGS: Settings = {
   feelingAutoDismiss: true,
+  appearance: DEFAULT_APPEARANCE,
 };
 
 interface Store {
@@ -59,7 +62,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
         if (raw[k] != null) {
           try {
-            (s as any)[k] = JSON.parse(raw[k]);
+            const v = JSON.parse(raw[k]);
+            // Merge objects so settings added later get their defaults.
+            (s as any)[k] =
+              v && typeof v === 'object' && !Array.isArray(v) ? { ...(DEFAULT_SETTINGS as any)[k], ...v } : v;
           } catch {}
         }
       }
@@ -130,5 +136,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [ready, habits, records, idx, ctx, settings, now, today, reload],
   );
 
-  return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
+  return (
+    <StoreContext.Provider value={store}>
+      <AppearanceContext.Provider value={settings.appearance}>{children}</AppearanceContext.Provider>
+    </StoreContext.Provider>
+  );
 }

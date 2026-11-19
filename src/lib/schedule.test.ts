@@ -13,6 +13,9 @@ import {
   todayCompletion,
   visibleToday,
   feelingStats,
+  layoutDay,
+  timelineFocus,
+  stateOn,
 } from './schedule';
 import { addDays, diffDays, last7, weekDays, weekStart } from './dates';
 
@@ -23,6 +26,7 @@ let nextId = 1;
 function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
   return {
     id: nextId++,
+    kind: 'habit',
     name: 'h',
     section: 'morning',
     why: null,
@@ -33,6 +37,11 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     paused_from: null,
     paused_until: null,
     created_at: '2026-11-01T08:00:00',
+    scheduled_time: null,
+    end_time: null,
+    reminder: false,
+    remind_before: 0,
+    meta: null,
     ...extra,
   };
 }
@@ -42,6 +51,7 @@ const rec = (h: Habit, date: string, status: DayRecord['status'] = 'done', feeli
   status,
   feeling,
   timestamp: date + 'T09:00:00',
+  meta: null,
 });
 
 test('date helpers: Monday-start weeks, diffs across DST', () => {
@@ -163,4 +173,52 @@ test('stacked habits sit under their anchor; cycles fall back to flat', () => {
   const y = habit({ type: 'daily' }, { order: 1, name: 'y', stack_after: x.id });
   x.stack_after = y.id;
   assert.equal(sectionRows([x, y], 'morning', () => true).length, 2);
+});
+
+test('timeline: anchors + scheduled habits by time; stacked habits follow their anchor', () => {
+  const wake = habit({ type: 'daily' }, { kind: 'anchor', name: 'wake', scheduled_time: '07:00' });
+  const work = habit({ type: 'specific_days', days: [1, 2, 3, 4, 5] }, { kind: 'anchor', name: 'work', scheduled_time: '09:00', end_time: '17:00' });
+  const weekendBrunch = habit({ type: 'specific_days', days: [0, 6] }, { kind: 'anchor', name: 'brunch', scheduled_time: '10:00' });
+  const water = habit({ type: 'daily' }, { name: 'water', stack_after: wake.id, section: 'morning' });
+  const pills = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15' });
+  const read = habit({ type: 'daily' }, { name: 'read', section: 'evening' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'lift', section: 'week', scheduled_time: '18:00' }); // weekly ignores time
+  const all = [read, work, pills, water, wake, weekendBrunch, lift];
+  const idx = indexRecords([]);
+  const l = layoutDay(all, (h) => visibleToday(h, idx, ctx));
+  assert.deepEqual(
+    l.timeline.map((r) => [r.habit.name, r.depth]),
+    [
+      ['wake', 0],
+      ['water', 1],
+      ['pills', 0],
+      ['work', 0],
+    ],
+  );
+  assert.deepEqual(l.sections.evening.map((r) => r.habit.name), ['read']);
+  assert.deepEqual(l.sections.week.map((r) => r.habit.name), ['lift']);
+  assert.deepEqual(l.sections.morning, []);
+});
+
+test('timeline focus: Now inside a window, else Next; done items are passed over', () => {
+  const wake = habit({ type: 'daily' }, { kind: 'anchor', scheduled_time: '07:00' });
+  const breakfast = habit({ type: 'daily' }, { kind: 'anchor', scheduled_time: '07:30' });
+  const work = habit({ type: 'daily' }, { kind: 'anchor', scheduled_time: '09:00', end_time: '17:00' });
+  const idx = indexRecords([rec(wake, TODAY)]);
+  const rows = layoutDay([wake, breakfast, work], () => true).timeline;
+  const st = (h: Habit) => stateOn(h, idx, TODAY, ctx);
+  const at = (hm: string) => timelineFocus(rows, st, Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3)));
+  assert.deepEqual(at('06:00'), { id: breakfast.id, label: 'Next' }); // wake already dismissed
+  assert.deepEqual(at('07:45'), { id: breakfast.id, label: 'Now' });
+  assert.deepEqual(at('09:30'), { id: work.id, label: 'Now' }); // breakfast's window closed at 9:00
+  assert.equal(at('17:30'), null);
+});
+
+test('anchors never count toward %, the ring, or never-miss-twice', () => {
+  const a = habit({ type: 'daily' }, { kind: 'anchor', scheduled_time: '07:00' });
+  const h = habit({ type: 'daily' });
+  const idx = indexRecords([rec(a, TODAY), rec(h, TODAY)]);
+  assert.deepEqual(todayCompletion([a, h], idx, ctx), { done: 1, total: 1, pct: 1 });
+  assert.equal(progress(a, idx, weekDays(TODAY), ctx).pct, null);
+  assert.equal(missedTwiceRisk(a, indexRecords([]), ctx), false);
 });

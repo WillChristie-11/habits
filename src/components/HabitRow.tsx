@@ -14,9 +14,9 @@ import {
 } from '../lib/schedule';
 import { last7, weekDays } from '../lib/dates';
 import { DotRow } from './Dots';
-import { colors } from '../theme';
+import { status, useThemedStyles, type Theme } from '../theme';
 
-interface Props {
+export interface RowProps {
   row: Row;
   editMode: boolean;
   onToggle(state: DayState): void;
@@ -25,10 +25,13 @@ interface Props {
   onDelete(): void;
   dragHandlers?: GestureResponderHandlers;
   dimmed?: boolean;
+  /** Timeline highlight for the current / next item. */
+  focus?: 'Now' | 'Next' | null;
 }
 
-export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelete, dragHandlers, dimmed }: Props) {
+export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelete, dragHandlers, dimmed, focus }: RowProps) {
   const { idx, ctx } = useStore();
+  const s = useThemedStyles(makeStyles);
   const h = row.habit;
   const days = last7(ctx.today);
   const tl = timeline(h, idx, days[0], ctx.today, ctx);
@@ -51,34 +54,24 @@ export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelet
     prev.current = today;
   }, [today, scale]);
 
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  useEffect(() => {
-    if (!confirmDelete) return;
-    const t = setTimeout(() => setConfirmDelete(false), 4000);
-    return () => clearTimeout(t);
-  }, [confirmDelete]);
-  const showConfirm = confirmDelete && editMode;
-
   const metaParts: React.ReactNode[] = [];
-  if (isNext) metaParts.push(<Text key="next" style={styles.next}>Next up</Text>);
-  if (risk) metaParts.push(<Text key="risk" style={styles.risk}>⚑ missed yesterday</Text>);
+  if (focus) metaParts.push(<Text key="focus" style={s.next}>{focus}</Text>);
+  if (isNext && !focus) metaParts.push(<Text key="next" style={s.next}>Next up</Text>);
+  if (risk) metaParts.push(<Text key="risk" style={s.risk}>⚑ missed yesterday</Text>);
   if (due)
     metaParts.push(
-      <Text
-        key="due"
-        style={[styles.meta, due.kind === 'overdue' && { color: colors.amber }, due.kind === 'due' && { color: colors.accent }]}
-      >
+      <Text key="due" style={[s.meta, due.kind === 'overdue' && s.overdue, due.kind === 'due' && s.due]}>
         {due.text}
       </Text>,
     );
-  if (today === 'skipped') metaParts.push(<Text key="skip" style={[styles.meta, { color: colors.skip }]}>rest day</Text>);
+  if (today === 'skipped') metaParts.push(<Text key="skip" style={s.meta}>rest day</Text>);
   if (feel.count >= 10 && feel.avg != null)
     metaParts.push(
-      <Text key="feel" style={styles.meta}>
+      <Text key="feel" style={s.meta}>
         usually {feelingLabel(feel.avg)} after this
       </Text>,
     );
-  if (editMode && dimmed) metaParts.push(<Text key="nt" style={styles.meta}>not today</Text>);
+  if (editMode && dimmed) metaParts.push(<Text key="nt" style={s.meta}>not today</Text>);
 
   const weekText =
     week.target != null ? `${week.done}/${week.target}` : week.pct == null ? '—' : `${Math.round(week.pct * 100)}%`;
@@ -86,24 +79,15 @@ export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelet
   return (
     <View
       style={[
-        styles.row,
+        s.row,
         { marginLeft: row.depth * 22 },
-        isNext && styles.rowNext,
-        risk && styles.rowRisk,
+        (isNext || focus) && s.rowNext,
+        risk && s.rowRisk,
         dimmed && { opacity: 0.55 },
       ]}
     >
-      {row.depth > 0 && <View style={styles.stackLine} />}
-      {editMode ? (
-        dragHandlers ? (
-          <View {...dragHandlers} style={styles.handle} hitSlop={8} accessibilityLabel="Drag to reorder">
-            <Text style={styles.handleText}>≡</Text>
-          </View>
-        ) : (
-          // Stacked habits move with their anchor.
-          <View style={styles.handle} />
-        )
-      ) : (
+      {row.depth > 0 && <View style={s.stackLine} />}
+      <Leading editMode={editMode} dragHandlers={dragHandlers}>
         <Pressable
           onPress={() => onToggle(today)}
           hitSlop={10}
@@ -111,106 +95,133 @@ export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelet
           accessibilityState={{ checked: today === 'done' }}
           accessibilityLabel={h.name}
         >
-          <Animated.View style={[styles.check, checkStyle(today), { transform: [{ scale }] }]}>
-            {today === 'done' && <Text style={styles.checkMark}>✓</Text>}
-            {today === 'skipped' && <Text style={[styles.checkMark, { color: colors.skip }]}>–</Text>}
-            {today === 'paused' && <Text style={[styles.checkMark, { color: '#fff', fontSize: 11 }]}>❙❙</Text>}
+          <Animated.View style={[s.check, s[`check_${today}`], { transform: [{ scale }] }]}>
+            {today === 'done' && <Text style={s.checkMark}>✓</Text>}
+            {today === 'paused' && <Text style={[s.checkMark, { fontSize: 10 }]}>❙❙</Text>}
           </Animated.View>
         </Pressable>
-      )}
+      </Leading>
 
       <Pressable
-        style={styles.body}
+        style={s.body}
         onPress={editMode ? undefined : onOpen}
         onLongPress={editMode ? undefined : onLongPress}
         delayLongPress={350}
       >
-        <Text style={[styles.name, today === 'done' && styles.nameDone]} numberOfLines={1}>
+        <Text style={[s.name, today === 'done' && s.nameDone]} numberOfLines={1}>
           {h.name}
         </Text>
-        {metaParts.length > 0 && <View style={styles.metaRow}>{metaParts}</View>}
+        {metaParts.length > 0 && <View style={s.metaRow}>{metaParts}</View>}
       </Pressable>
 
       {editMode ? (
-        showConfirm ? (
-          <Pressable onPress={onDelete} style={styles.removeBtn} accessibilityRole="button">
-            <Text style={styles.removeText}>Remove?</Text>
-          </Pressable>
-        ) : (
-          <Pressable onPress={() => setConfirmDelete(true)} hitSlop={10} style={styles.x} accessibilityLabel="Delete">
-            <Text style={styles.xText}>✕</Text>
-          </Pressable>
-        )
+        <DeleteButton onDelete={onDelete} />
       ) : (
-        <Pressable onPress={onOpen} style={styles.right}>
+        <Pressable onPress={onOpen} style={s.right}>
           <DotRow states={dotStates} />
-          <Text style={styles.pct}>{weekText}</Text>
+          <Text style={s.pct}>{weekText}</Text>
         </Pressable>
       )}
     </View>
   );
 }
 
-function checkStyle(s: DayState) {
-  switch (s) {
-    case 'done':
-      return { backgroundColor: colors.accent, borderColor: colors.accent };
-    case 'skipped':
-      return { borderColor: colors.skip };
-    case 'paused':
-      return { backgroundColor: colors.paused, borderColor: colors.paused };
-    default:
-      return {};
-  }
+/** Drag handle in edit mode (or a spacer for rows that can't be dragged on their own), else children. */
+export function Leading({
+  editMode,
+  dragHandlers,
+  children,
+}: {
+  editMode: boolean;
+  dragHandlers?: GestureResponderHandlers;
+  children: React.ReactNode;
+}) {
+  const s = useThemedStyles(makeStyles);
+  if (!editMode) return <>{children}</>;
+  if (!dragHandlers) return <View style={s.handle} />;
+  return (
+    <View {...dragHandlers} style={s.handle} hitSlop={8} accessibilityLabel="Drag to reorder">
+      <Text style={s.handleText}>≡</Text>
+    </View>
+  );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    marginBottom: 6,
-    minHeight: 56,
-  },
-  rowNext: { backgroundColor: colors.accentSoft },
-  rowRisk: { borderLeftWidth: 3, borderLeftColor: colors.amber },
-  stackLine: {
-    position: 'absolute',
-    left: -12,
-    top: -6,
-    height: 34,
-    width: 10,
-    borderLeftWidth: 1.5,
-    borderBottomWidth: 1.5,
-    borderColor: colors.faint,
-    borderBottomLeftRadius: 6,
-  },
-  check: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: colors.faint,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkMark: { color: '#fff', fontSize: 16, fontWeight: '700', marginTop: -1 },
-  handle: { width: 28, height: 36, alignItems: 'center', justifyContent: 'center' },
-  handleText: { fontSize: 22, color: colors.sub },
-  body: { flex: 1, marginLeft: 12, justifyContent: 'center', minHeight: 34 },
-  name: { fontSize: 16, color: colors.text, fontWeight: '500' },
-  nameDone: { color: colors.sub },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  meta: { fontSize: 12, color: colors.sub },
-  next: { fontSize: 12, color: colors.accent, fontWeight: '600' },
-  risk: { fontSize: 12, color: colors.amber, fontWeight: '600' },
-  right: { alignItems: 'flex-end', marginLeft: 8 },
-  pct: { fontSize: 11, color: colors.sub, marginTop: 3, fontVariant: ['tabular-nums'] },
-  x: { padding: 6 },
-  xText: { fontSize: 16, color: colors.sub },
-  removeBtn: { backgroundColor: colors.red, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  removeText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-});
+/** ✕, then a "Remove?" confirm that times out after 4 s. */
+export function DeleteButton({ onDelete }: { onDelete(): void }) {
+  const s = useThemedStyles(makeStyles);
+  const [confirm, setConfirm] = useState(false);
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirm]);
+  return confirm ? (
+    <Pressable onPress={onDelete} style={s.removeBtn} accessibilityRole="button">
+      <Text style={s.removeText}>Remove?</Text>
+    </Pressable>
+  ) : (
+    <Pressable onPress={() => setConfirm(true)} hitSlop={10} style={s.x} accessibilityLabel="Delete">
+      <Text style={s.xText}>✕</Text>
+    </Pressable>
+  );
+}
+
+export const makeStyles = (t: Theme) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 11,
+      paddingHorizontal: 12,
+      backgroundColor: t.surface,
+      borderRadius: 12,
+      marginBottom: 6,
+      minHeight: 56,
+    },
+    rowNext: { backgroundColor: t.accentSoft },
+    rowRisk: { borderLeftWidth: 3, borderLeftColor: status.flag },
+    stackLine: {
+      position: 'absolute',
+      left: -12,
+      top: -6,
+      height: 34,
+      width: 10,
+      borderLeftWidth: 1.5,
+      borderBottomWidth: 1.5,
+      borderColor: t.dotEmpty,
+      borderBottomLeftRadius: 6,
+    },
+    check: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 2,
+      borderColor: t.dotEmpty,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    check_done: { backgroundColor: t.accent, borderColor: t.accent },
+    check_skipped: { borderColor: status.skipped, borderStyle: 'dashed' },
+    check_paused: { backgroundColor: status.paused, borderColor: status.paused },
+    check_missed: {},
+    check_pending: {},
+    check_none: {},
+    checkMark: { color: t.onAccent, fontSize: 16, fontWeight: '700', marginTop: -1 },
+    handle: { width: 28, height: 36, alignItems: 'center', justifyContent: 'center' },
+    handleText: { fontSize: 22, color: t.textMuted },
+    body: { flex: 1, marginLeft: 12, justifyContent: 'center', minHeight: 34 },
+    name: { fontSize: 16, color: t.text, fontWeight: '500' },
+    nameDone: { color: t.textMuted },
+    metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+    meta: { fontSize: 12, color: t.textMuted },
+    due: { color: t.accent },
+    overdue: { color: status.flag },
+    next: { fontSize: 12, color: t.accent, fontWeight: '600' },
+    risk: { fontSize: 12, color: status.flag, fontWeight: '600' },
+    right: { alignItems: 'flex-end', marginLeft: 8 },
+    pct: { fontSize: 11, color: t.textMuted, marginTop: 3, fontVariant: ['tabular-nums'] },
+    x: { padding: 6 },
+    xText: { fontSize: 16, color: t.textMuted },
+    removeBtn: { backgroundColor: status.deadline, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+    removeText: { color: status.onStatus, fontWeight: '600', fontSize: 13 },
+  });

@@ -111,6 +111,7 @@ export interface Progress {
  * Today counts only once it's done (so mornings don't start at 0%).
  */
 export function progress(h: Habit, idx: RecordIndex, days: string[], ctx: Ctx): Progress {
+  if (h.kind === 'anchor') return { done: 0, expected: 0, pct: null }; // anchors never count
   const tl = timeline(h, idx, days[0], days[days.length - 1], ctx);
   let done = 0;
   let missed = 0;
@@ -145,35 +146,39 @@ export function dueLabel(h: Habit, idx: RecordIndex, ctx: Ctx): DueLabel {
   return { kind: 'later', text: diff === 1 ? 'tomorrow' : `in ${diff} days` };
 }
 
-/** Should the habit appear in today's list? (specific_days hides on other weekdays.) */
-export function visibleToday(h: Habit, idx: RecordIndex, ctx: Ctx): boolean {
+/** Should the item appear on `date`'s list? (specific_days hides on other weekdays.) */
+export function visibleOn(h: Habit, idx: RecordIndex, ctx: Ctx, date: string = ctx.today): boolean {
+  if (date < toKey(new Date(h.created_at)) && !idx.get(h.id)?.has(date)) return false;
   if (h.frequency.type !== 'specific_days') return true;
-  const s = stateOn(h, idx, ctx.today, ctx);
-  return s !== 'none' || (h.frequency.days ?? []).includes(weekday(ctx.today));
+  return (h.frequency.days ?? []).includes(weekday(date)) || !!idx.get(h.id)?.has(date);
 }
+
+export const visibleToday = (h: Habit, idx: RecordIndex, ctx: Ctx) => visibleOn(h, idx, ctx);
 
 /** "Never miss twice": missed yesterday and not done today. */
 export function missedTwiceRisk(h: Habit, idx: RecordIndex, ctx: Ctx): boolean {
-  if (h.frequency.type === 'weekly_count') return false;
+  if (h.kind === 'anchor' || h.frequency.type === 'weekly_count') return false;
   const y = addDays(ctx.today, -1);
   const tl = timeline(h, idx, y, ctx.today, ctx);
   return tl.states.get(y) === 'missed' && tl.states.get(ctx.today) === 'pending';
 }
 
-/** Today's ring: done ÷ (done + still pending), over habits expected today. weekly_count excluded. */
-export function todayCompletion(habits: Habit[], idx: RecordIndex, ctx: Ctx) {
+/** A day's ring: done ÷ (done + still pending/missed), over habits expected that day. Anchors and weekly_count excluded. */
+export function dayCompletion(habits: Habit[], idx: RecordIndex, ctx: Ctx, date: string = ctx.today) {
   let done = 0;
   let total = 0;
   for (const h of habits) {
-    if (h.frequency.type === 'weekly_count') continue;
-    const s = stateOn(h, idx, ctx.today, ctx);
+    if (h.kind === 'anchor' || h.frequency.type === 'weekly_count') continue;
+    const s = stateOn(h, idx, date, ctx);
     if (s === 'done') {
       done++;
       total++;
-    } else if (s === 'pending') total++;
+    } else if (s === 'pending' || s === 'missed') total++;
   }
   return { done, total, pct: total ? done / total : 0 };
 }
+
+export const todayCompletion = (habits: Habit[], idx: RecordIndex, ctx: Ctx) => dayCompletion(habits, idx, ctx);
 
 export function feelingStats(h: Habit, idx: RecordIndex, days?: string[]) {
   const recs = idx.get(h.id);
@@ -197,40 +202,105 @@ export function feelingLabel(avg: number): string {
 export interface Row {
   habit: Habit;
   depth: number;
+  /** the item this one is stacked under, if shown under it */
   anchor: Habit | null;
 }
 
+export interface DayLayout {
+  /** anchors + scheduled habits by time, each followed by what's stacked on it */
+  timeline: Row[];
+  sections: Record<Section, Row[]>;
+}
+
+/** Anchors, and daily / specific-days habits with a scheduled time, live on the timeline. */
+export function onTimeline(h: Habit): boolean {
+  if (h.kind === 'anchor') return true;
+  return h.scheduled_time != null && (h.frequency.type === 'daily' || h.frequency.type === 'specific_days');
+}
+
+const byOrder = (a: Habit, b: Habit) => a.order - b.order || a.id - b.id;
+
 /**
- * Order a section's habits for display: by `order`, with stacked habits placed
- * (indented) directly under their anchor. Anchors in another section or hidden today
- * are ignored, so the habit shows as a normal row.
+ * Place a day's items. Precedence: own scheduled time → timeline; stacked on a visible item →
+ * directly under it (wherever that is); otherwise the habit's section. Stacking cycles fall back
+ * to flat section rows.
  */
-export function sectionRows(habits: Habit[], section: Section, visible: (h: Habit) => boolean): Row[] {
-  const list = habits
-    .filter((h) => h.section === section && visible(h))
-    .sort((a, b) => a.order - b.order || a.id - b.id);
+export function layoutDay(habits: Habit[], visible: (h: Habit) => boolean): DayLayout {
+  const list = habits.filter(visible).sort(byOrder);
   const byId = new Map(list.map((h) => [h.id, h]));
+  const parentOf = (h: Habit): Habit | null => {
+    if (onTimeline(h) || h.stack_after == null || h.stack_after === h.id) return null;
+    return byId.get(h.stack_after) ?? null;
+  };
   const children = new Map<number, Habit[]>();
   const roots: Habit[] = [];
   for (const h of list) {
-    const anchor = h.stack_after != null ? byId.get(h.stack_after) : undefined;
-    if (anchor && anchor.id !== h.id) {
-      if (!children.has(anchor.id)) children.set(anchor.id, []);
-      children.get(anchor.id)!.push(h);
+    const p = parentOf(h);
+    if (p) {
+      if (!children.has(p.id)) children.set(p.id, []);
+      children.get(p.id)!.push(h);
     } else roots.push(h);
   }
-  const out: Row[] = [];
+
   const seen = new Set<number>();
-  const visit = (h: Habit, depth: number, anchor: Habit | null) => {
+  const visit = (out: Row[], h: Habit, depth: number, anchor: Habit | null) => {
     if (seen.has(h.id)) return;
     seen.add(h.id);
     out.push({ habit: h, depth: Math.min(depth, 2), anchor });
-    for (const c of children.get(h.id) ?? []) visit(c, depth + 1, h);
+    for (const c of children.get(h.id) ?? []) visit(out, c, depth + 1, h);
   };
-  roots.forEach((h) => visit(h, 0, null));
-  // Anything left is in a stacking cycle; show it flat.
-  list.forEach((h) => visit(h, 0, null));
-  return out;
+
+  const timeline: Row[] = [];
+  const sections: Record<Section, Row[]> = { morning: [], evening: [], week: [] };
+  roots
+    .filter(onTimeline)
+    .sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? '') || byOrder(a, b))
+    .forEach((h) => visit(timeline, h, 0, null));
+  roots.filter((h) => !onTimeline(h)).forEach((h) => visit(sections[h.section], h, 0, null));
+  list.forEach((h) => visit(sections[h.section], h, 0, null)); // cycle leftovers
+  return { timeline, sections };
+}
+
+/** Kept for callers that only need one section. */
+export function sectionRows(habits: Habit[], section: Section, visible: (h: Habit) => boolean): Row[] {
+  return layoutDay(habits, visible).sections[section];
+}
+
+export function toMinutes(hm: string): number {
+  const [h, m] = hm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+export function fromMinutes(min: number): string {
+  const m = ((Math.round(min) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Which timeline item to highlight. An item's window runs from its time to its end time, or
+ * else to the next item's (later) time. The first unfinished item whose window hasn't closed
+ * is "Now" if it has started, otherwise "Next".
+ */
+export function timelineFocus(
+  rows: Row[],
+  stateOf: (h: Habit) => DayState,
+  nowMin: number,
+): { id: number; label: 'Now' | 'Next' } | null {
+  const roots = rows.filter((r) => r.depth === 0 && r.habit.scheduled_time);
+  for (let i = 0; i < roots.length; i++) {
+    const h = roots[i].habit;
+    const start = toMinutes(h.scheduled_time!);
+    const s = stateOf(h);
+    if (s === 'done' || s === 'skipped' || s === 'paused') continue;
+    let end = h.end_time ? toMinutes(h.end_time) : 24 * 60;
+    if (!h.end_time) {
+      const later = roots.slice(i + 1).find((r) => toMinutes(r.habit.scheduled_time!) > start);
+      if (later) end = toMinutes(later.habit.scheduled_time!);
+    }
+    if (end <= nowMin) continue;
+    return { id: h.id, label: start <= nowMin ? 'Now' : 'Next' };
+  }
+  return null;
 }
 
 export function frequencyText(h: Habit): string {

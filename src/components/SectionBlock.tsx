@@ -3,18 +3,20 @@ import { Animated, PanResponder, StyleSheet, Text, View, type PanResponderInstan
 import * as Haptics from 'expo-haptics';
 import type { DayState, Habit, Section } from '../types';
 import { SECTION_LABELS } from '../types';
-import { sectionRows, visibleToday, type Row } from '../lib/schedule';
+import { visibleToday, type Row } from '../lib/schedule';
 import { useStore } from '../store';
 import { HabitRow } from './HabitRow';
-import { colors } from '../theme';
+import { useThemedStyles, type Theme } from '../theme';
 
 interface Props {
   section: Section;
+  rows: Row[];
   editMode: boolean;
   setScrollEnabled(v: boolean): void;
   onToggle(h: Habit, state: DayState): void;
   onOpen(h: Habit): void;
   onLongPress(h: Habit): void;
+  onDelete(h: Habit): void;
   /** Rendered between the header and rows (e.g. section banners). */
   header?: React.ReactNode;
 }
@@ -29,13 +31,9 @@ function toUnits(rows: Row[]): Row[][] {
   return units;
 }
 
-export function SectionBlock({ section, editMode, setScrollEnabled, onToggle, onOpen, onLongPress, header }: Props) {
-  const { habits, idx, ctx, reorder, removeHabit } = useStore();
-
-  const rows = useMemo(
-    () => sectionRows(habits, section, editMode ? () => true : (h) => visibleToday(h, idx, ctx)),
-    [habits, section, editMode, idx, ctx],
-  );
+export function SectionBlock({ section, rows, editMode, setScrollEnabled, onToggle, onOpen, onLongPress, onDelete, header }: Props) {
+  const { idx, ctx, reorder } = useStore();
+  const styles = useThemedStyles(makeStyles);
   const units = useMemo(() => toUnits(rows), [rows]);
 
   // Measured unit heights (written from onLayout, read only inside gesture handlers).
@@ -130,10 +128,7 @@ export function SectionBlock({ section, editMode, setScrollEnabled, onToggle, on
                 onToggle={(s) => onToggle(row.habit, s)}
                 onOpen={() => onOpen(row.habit)}
                 onLongPress={() => onLongPress(row.habit)}
-                onDelete={() => {
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-                  removeHabit(row.habit.id);
-                }}
+                onDelete={() => onDelete(row.habit)}
               />
             ))}
           </Animated.View>
@@ -143,20 +138,20 @@ export function SectionBlock({ section, editMode, setScrollEnabled, onToggle, on
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   section: { marginTop: 22 },
   title: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.sub,
+    color: t.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     marginBottom: 8,
     marginLeft: 4,
   },
-  empty: { color: colors.sub, fontSize: 14, marginLeft: 4, marginBottom: 8 },
+  empty: { color: t.textMuted, fontSize: 14, marginLeft: 4, marginBottom: 8 },
   lifted: {
-    shadowColor: '#000',
+    shadowColor: t.shadow,
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },

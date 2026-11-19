@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { DayRecord, Frequency, Habit, HabitInput, RecordStatus, Section } from '../types';
+import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, Meta, RecordStatus, Section } from '../types';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -8,7 +8,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -44,12 +44,32 @@ async function open() {
       );
     `);
   }
+  if (version < 2) {
+    // v2: anchors, scheduled times, reminders, and free-form meta for future features.
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE habits ADD COLUMN kind TEXT NOT NULL DEFAULT 'habit';
+        ALTER TABLE habits ADD COLUMN scheduled_time TEXT;
+        ALTER TABLE habits ADD COLUMN end_time TEXT;
+        ALTER TABLE habits ADD COLUMN reminder INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE habits ADD COLUMN remind_before INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE habits ADD COLUMN meta TEXT;
+        ALTER TABLE records ADD COLUMN meta TEXT;
+      `);
+    });
+  }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }
 
 interface HabitRow {
   id: number;
+  kind: ItemKind;
+  scheduled_time: string | null;
+  end_time: string | null;
+  reminder: number;
+  remind_before: number;
+  meta: string | null;
   name: string;
   section: Section;
   why: string | null;
@@ -62,6 +82,16 @@ interface HabitRow {
   created_at: string;
 }
 
+function parseMeta(raw: string | null): Meta | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 function rowToHabit(r: HabitRow): Habit {
   let frequency: Frequency;
   try {
@@ -71,6 +101,7 @@ function rowToHabit(r: HabitRow): Habit {
   }
   return {
     id: r.id,
+    kind: r.kind === 'anchor' ? 'anchor' : 'habit',
     name: r.name,
     section: r.section,
     why: r.why,
@@ -81,6 +112,11 @@ function rowToHabit(r: HabitRow): Habit {
     paused_from: r.paused_from,
     paused_until: r.paused_until,
     created_at: r.created_at,
+    scheduled_time: r.scheduled_time,
+    end_time: r.end_time,
+    reminder: !!r.reminder,
+    remind_before: r.remind_before ?? 0,
+    meta: parseMeta(r.meta),
   };
 }
 
@@ -92,7 +128,10 @@ export async function loadHabits(): Promise<Habit[]> {
 
 export async function loadRecords(): Promise<DayRecord[]> {
   const db = await getDb();
-  return db.getAllAsync<DayRecord>('SELECT habit_id, date, status, feeling, timestamp FROM records');
+  const rows = await db.getAllAsync<Omit<DayRecord, 'meta'> & { meta: string | null }>(
+    'SELECT habit_id, date, status, feeling, timestamp, meta FROM records',
+  );
+  return rows.map((r) => ({ ...r, meta: parseMeta(r.meta) }));
 }
 
 export async function createHabit(input: HabitInput): Promise<number> {
@@ -102,8 +141,10 @@ export async function createHabit(input: HabitInput): Promise<number> {
     input.section,
   );
   const res = await db.runAsync(
-    `INSERT INTO habits (name, section, why, minimum_version, frequency, sort_order, stack_after, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
+       scheduled_time, end_time, reminder, remind_before, meta, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    input.kind,
     input.name,
     input.section,
     input.why,
@@ -111,6 +152,11 @@ export async function createHabit(input: HabitInput): Promise<number> {
     JSON.stringify(input.frequency),
     (max?.m ?? -1) + 1,
     input.stack_after,
+    input.scheduled_time,
+    input.end_time,
+    input.reminder ? 1 : 0,
+    input.remind_before,
+    input.meta ? JSON.stringify(input.meta) : null,
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -127,6 +173,11 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.minimum_version,
     JSON.stringify(input.frequency),
     input.stack_after,
+    input.scheduled_time,
+    input.end_time,
+    input.reminder ? 1 : 0,
+    input.remind_before,
+    input.meta ? JSON.stringify(input.meta) : null,
   ];
   if (current && current.section !== input.section) {
     // Moving sections: append to the end of the new one, and detach anything stacked on it.
@@ -136,11 +187,13 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     );
     orderClause = ', sort_order = ?';
     params.push((max?.m ?? -1) + 1);
-    await db.runAsync('UPDATE habits SET stack_after = NULL WHERE stack_after = ?', id);
+    // Habits stacked on a habit that changed section would end up in limbo; anchors keep their followers.
+    if (input.kind === 'habit') await db.runAsync('UPDATE habits SET stack_after = NULL WHERE stack_after = ?', id);
   }
   params.push(id);
   await db.runAsync(
-    `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?${orderClause}
+    `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
+       scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?${orderClause}
      WHERE id = ?`,
     ...params,
   );

@@ -1,18 +1,108 @@
-export const colors = {
-  bg: '#F6F6F3',
-  card: '#FFFFFF',
-  text: '#1B1B1D',
-  sub: '#8A8A8F',
-  faint: '#D9D9DC',
-  line: '#ECECEA',
-  accent: '#2E9E76',
-  accentSoft: '#E3F3EC',
-  amber: '#E59A12',
-  amberSoft: '#FDF3E0',
-  red: '#E0484D',
-  redSoft: '#FCE8E8',
-  paused: '#B4B4B9',
-  skip: '#5B8DEF',
-};
+// The only place colours are defined. Components get them through useTheme()/useThemedStyles().
+import { createContext, useContext, useMemo } from 'react';
+import { useColorScheme } from 'react-native';
 
-export const radius = 14;
+export interface Theme {
+  id: ThemeId;
+  name: string;
+  dark: boolean;
+  background: string;
+  surface: string;
+  text: string;
+  textMuted: string;
+  /** done dots, check circle, progress ring */
+  accent: string;
+  /** missed / not-yet-done dots, empty ring track */
+  dotEmpty: string;
+  border: string;
+  /** text/icons drawn on top of `accent` */
+  onAccent: string;
+  /** subtle fill for highlighted rows */
+  accentSoft: string;
+  /** pressed / secondary control fill */
+  muted: string;
+  shadow: string;
+}
+
+/** Status colours: identical in every theme, and never reused for anything else. */
+export const status = {
+  flag: '#D99A1E', // amber – never-miss-twice, behind pace
+  deadline: '#D9534F', // red – past the evening deadline, destructive
+  paused: '#9EA3A8', // grey – paused days
+  skipped: '#8E96A3', // outline only, no fill – rest days
+  flagSoft: 'rgba(217,154,30,0.14)',
+  deadlineSoft: 'rgba(217,83,79,0.14)',
+  /** text on a solid status colour */
+  onStatus: '#FFFFFF',
+} as const;
+
+export const themes = {
+  forest: {
+    id: 'forest',
+    name: 'Forest',
+    dark: false,
+    background: '#F6F5F1',
+    surface: '#FFFFFF',
+    text: '#1F2A24',
+    textMuted: '#5C6B62',
+    accent: '#2F6B4F',
+    dotEmpty: '#B9C4BC',
+    border: '#E3E1D9',
+    onAccent: '#FFFFFF',
+    accentSoft: 'rgba(47,107,79,0.10)',
+    muted: '#ECEBE5',
+    shadow: '#000000',
+  },
+  midnight: {
+    id: 'midnight',
+    name: 'Midnight',
+    dark: true,
+    background: '#12151B',
+    surface: '#1C2029',
+    text: '#E8EAED',
+    textMuted: '#9AA3B2',
+    accent: '#7AA2F7',
+    dotEmpty: '#3A4250',
+    border: '#2A303B',
+    onAccent: '#12151B',
+    accentSoft: 'rgba(122,162,247,0.14)',
+    muted: '#262B36',
+    shadow: '#000000',
+  },
+} satisfies Record<string, Omit<Theme, 'id'> & { id: string }>;
+
+export type ThemeId = keyof typeof themes;
+
+export type AppearanceMode = 'system' | 'light' | 'dark';
+
+export interface Appearance {
+  mode: AppearanceMode;
+  light: ThemeId;
+  dark: ThemeId;
+}
+
+export const DEFAULT_APPEARANCE: Appearance = { mode: 'system', light: 'forest', dark: 'midnight' };
+
+export function resolveTheme(a: Appearance, systemScheme: 'light' | 'dark' | null | undefined): Theme {
+  const wantDark = a.mode === 'dark' || (a.mode === 'system' && systemScheme === 'dark');
+  const id = wantDark ? a.dark : a.light;
+  return (themes[id] ?? themes.forest) as Theme;
+}
+
+/** Provided by the store, which owns the saved appearance setting. */
+export const AppearanceContext = createContext<Appearance>(DEFAULT_APPEARANCE);
+
+export function useTheme(): Theme {
+  const appearance = useContext(AppearanceContext);
+  const scheme = useColorScheme();
+  return resolveTheme(appearance, scheme === 'dark' ? 'dark' : scheme === 'light' ? 'light' : null);
+}
+
+/** `const s = useThemedStyles(makeStyles)` where makeStyles = (t: Theme) => StyleSheet.create({...}); memoised per theme. */
+export function useThemedStyles<T>(factory: (t: Theme) => T): T {
+  const t = useTheme();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => factory(t), [t.id]);
+}
+
+export const radius = 12;

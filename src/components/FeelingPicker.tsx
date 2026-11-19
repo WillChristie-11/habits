@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { FEELINGS } from '../types';
-import { colors } from '../theme';
+import { useThemedStyles, type Theme } from '../theme';
 
 const AUTO_DISMISS_MS = 4000;
 
@@ -15,6 +15,7 @@ interface Props {
 
 /** Slides up after a check-off. Records how you felt, not how much you did. */
 export function FeelingPicker({ habitName, autoDismiss, onPick, onDismiss }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const [slide] = useState(() => new Animated.Value(0));
   const [timer] = useState(() => new Animated.Value(1));
 
@@ -54,7 +55,7 @@ export function FeelingPicker({ habitName, autoDismiss, onPick, onDismiss }: Pro
         {FEELINGS.map((label, i) => (
           <Pressable
             key={label}
-            style={({ pressed }) => [styles.opt, pressed && { backgroundColor: colors.accentSoft }]}
+            style={({ pressed }) => [styles.opt, pressed && styles.optPressed]}
             onPress={() => {
               Haptics.selectionAsync().catch(() => {});
               onPick(i + 1);
@@ -74,29 +75,31 @@ export function FeelingPicker({ habitName, autoDismiss, onPick, onDismiss }: Pro
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) =>
+  StyleSheet.create({
   card: {
     position: 'absolute',
     left: 12,
     right: 12,
     bottom: 28,
-    backgroundColor: colors.card,
+    backgroundColor: t.surface,
     borderRadius: 16,
     paddingTop: 12,
     paddingHorizontal: 12,
     paddingBottom: 14,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: t.shadow,
     shadowOpacity: 0.14,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
   },
   head: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  title: { flex: 1, fontSize: 14, color: colors.text },
-  close: { color: colors.sub, fontSize: 14, paddingLeft: 10 },
+  title: { flex: 1, fontSize: 14, color: t.text },
+  close: { color: t.textMuted, fontSize: 14, paddingLeft: 10 },
   options: { flexDirection: 'row', gap: 6 },
-  opt: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10, backgroundColor: colors.bg },
-  num: { fontSize: 16, fontWeight: '600', color: colors.text },
-  optLabel: { fontSize: 11, color: colors.sub, marginTop: 2 },
-  bar: { position: 'absolute', left: 0, bottom: 0, height: 3, backgroundColor: colors.accent },
+  opt: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10, backgroundColor: t.muted },
+  num: { fontSize: 16, fontWeight: '600', color: t.text },
+  optLabel: { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  optPressed: { backgroundColor: t.accentSoft },
+  bar: { position: 'absolute', left: 0, bottom: 0, height: 3, backgroundColor: t.accent },
 });

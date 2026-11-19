@@ -25,8 +25,11 @@ npx expo lint
 
 ## Layout
 
-- `src/types.ts` – habit + record model
-- `src/db/db.ts` – SQLite schema (versioned with `PRAGMA user_version`) and queries
-- `src/lib/schedule.ts` – pure logic: day states, weekly %, due/overdue, "never miss twice", stacking order
+- `src/app/` – Expo Router routes (`index` = Today, `settings` = modal)
+- `src/types.ts` – habit / anchor + record model (`meta` JSON fields reserved for future features)
+- `src/db/db.ts` – SQLite schema, versioned with `PRAGMA user_version` (v2 adds anchors and times)
+- `src/lib/schedule.ts` – pure logic: day states, weekly %, due/overdue, "never miss twice",
+  timeline layout and Now/Next focus
+- `src/theme.ts` – every colour lives here (Forest, Midnight + shared status colours)
 - `src/store.tsx` – app state (React context over SQLite)
 - `src/screens`, `src/components` – UI
