@@ -1,0 +1,235 @@
+// Pure reminder logic shared by the in-app banners and the scheduled notifications.
+import type { Habit, ReminderSettings } from '../types';
+import { addDays, atTime, formatDuration, formatTime, weekDays } from './dates';
+import {
+  missedTwiceRisk,
+  onTimeline,
+  progress,
+  stateOn,
+  toMinutes,
+  visibleOn,
+  fromMinutes,
+  type Ctx,
+  type RecordIndex,
+} from './schedule';
+
+export const NUDGE_LEAD_MIN = 120; // evening nudge starts 2 h before the deadline
+export const SNOOZE_MIN = 30;
+/** iOS keeps at most 64 pending local notifications per app; leave headroom. */
+export const MAX_SCHEDULED = 60;
+export const MORNING_ENDS = '12:00';
+
+const tracked = (h: Habit) => h.kind === 'habit';
+
+/** Unfinished habits in the Morning section on `date`. */
+export function morningPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date = ctx.today): Habit[] {
+  const c = { ...ctx, today: date };
+  return habits
+    .filter((h) => tracked(h) && h.section === 'morning' && h.frequency.type !== 'weekly_count')
+    .filter((h) => visibleOn(h, idx, c, date) && stateOn(h, idx, date, c) === 'pending')
+    .sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? '') || a.order - b.order);
+}
+
+/** Habits still expected on `date` (not weekly_count), "never miss twice" ones first. */
+export function dayPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date = ctx.today): { habit: Habit; flagged: boolean }[] {
+  const c = { ...ctx, today: date };
+  return habits
+    .filter((h) => tracked(h) && h.frequency.type !== 'weekly_count')
+    .filter((h) => visibleOn(h, idx, c, date) && stateOn(h, idx, date, c) === 'pending')
+    .map((habit) => ({ habit, flagged: missedTwiceRisk(habit, idx, c) }))
+    .sort((a, b) => Number(b.flagged) - Number(a.flagged) || sectionRank(a.habit) - sectionRank(b.habit) || a.habit.order - b.habit.order);
+}
+
+const sectionRank = (h: Habit) => ({ morning: 0, evening: 1, week: 2 })[h.section];
+
+export interface PaceWarning {
+  habit: Habit;
+  done: number;
+  target: number;
+  daysLeft: number;
+}
+
+/**
+ * weekly_count habits that are behind: days left this week (including today) are fewer than
+ * the sessions still needed + 1. e.g. 0/2 lifts with 3 days left → warn.
+ * (Strictly "fewer than" would only fire at 2 days left, which contradicts that example,
+ * so this warns when days left ≤ remaining + 1.)
+ */
+export function behindPace(habits: Habit[], idx: RecordIndex, ctx: Ctx): PaceWarning[] {
+  const week = weekDays(ctx.today);
+  const daysLeft = week.length - week.indexOf(ctx.today);
+  const out: PaceWarning[] = [];
+  for (const h of habits) {
+    if (!tracked(h) || h.frequency.type !== 'weekly_count') continue;
+    if (stateOn(h, idx, ctx.today, ctx) === 'paused') continue;
+    const p = progress(h, idx, week, ctx);
+    const remaining = (p.target ?? 0) - p.done;
+    if (remaining > 0 && daysLeft <= remaining + 1) out.push({ habit: h, done: p.done, target: p.target!, daysLeft });
+  }
+  return out;
+}
+
+export function nudgeStart(r: ReminderSettings): string {
+  return fromMinutes(toMinutes(r.eveningDeadline) - NUDGE_LEAD_MIN);
+}
+
+const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
+
+/**
+ * Has this habit's part of the day passed? Then tapping it shows its why / minimum version.
+ * Timed: after its time. Morning: after noon. Evening: once the evening nudge starts.
+ * This week: when it's behind pace.
+ */
+export function sectionPassed(h: Habit, r: ReminderSettings, now: Date, behind: boolean): boolean {
+  const n = minutesOf(now);
+  if (h.scheduled_time && onTimeline(h)) return n >= toMinutes(h.scheduled_time);
+  if (h.section === 'morning') return n >= toMinutes(MORNING_ENDS);
+  if (h.section === 'evening') return n >= toMinutes(nudgeStart(r));
+  return behind;
+}
+
+export type BannerState =
+  | { kind: 'morning'; habits: Habit[] }
+  | { kind: 'evening'; items: { habit: Habit; flagged: boolean }[]; minutesLeft: number; late: boolean }
+  | { kind: 'pace'; warnings: PaceWarning[] };
+
+export function banners(habits: Habit[], idx: RecordIndex, ctx: Ctx, r: ReminderSettings, now: Date): BannerState[] {
+  const out: BannerState[] = [];
+  const n = minutesOf(now);
+  let evening: BannerState | null = null;
+  if (r.eveningEnabled && n >= toMinutes(nudgeStart(r))) {
+    const items = dayPending(habits, idx, ctx);
+    const deadline = toMinutes(r.eveningDeadline);
+    if (items.length) evening = { kind: 'evening', items, minutesLeft: deadline - n, late: n >= deadline };
+  }
+  // Once the evening nudge is up it already lists unfinished morning habits, so the morning
+  // banner steps aside rather than stacking a duplicate.
+  if (!evening && r.morningEnabled && r.morningDismissedOn !== ctx.today && n >= toMinutes(r.morningTime)) {
+    const m = morningPending(habits, idx, ctx);
+    if (m.length) out.push({ kind: 'morning', habits: m });
+  }
+  if (evening) out.push(evening);
+  const pace = behindPace(habits, idx, ctx);
+  if (pace.length) out.push({ kind: 'pace', warnings: pace });
+  return out;
+}
+
+export function paceText(w: PaceWarning): string {
+  return `${w.habit.name}: ${w.done}/${w.target} this week, ${w.daysLeft} ${w.daysLeft === 1 ? 'day' : 'days'} left`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Notification plan
+
+export interface PlannedNotification {
+  id: string;
+  at: Date;
+  title: string;
+  body: string;
+  /** 'item' notifications get Done / Later / Skip buttons */
+  category: 'item' | null;
+  data: { type: 'item' | 'morning' | 'evening'; habitId?: number; date: string };
+}
+
+function list(names: string[], max = 3): string {
+  if (names.length <= max) return names.join(', ');
+  return `${names.slice(0, max).join(', ')} +${names.length - max} more`;
+}
+
+function itemBody(h: Habit, minutesBefore: number): string {
+  const when = minutesBefore > 0 ? `In ${formatDuration(minutesBefore)}` : formatTime(h.scheduled_time);
+  if (h.kind === 'anchor') return h.end_time ? `${when} · until ${formatTime(h.end_time)}` : when;
+  const extra = h.why ?? (h.minimum_version ? `Minimum: ${h.minimum_version}` : null);
+  return extra ? `${when} · ${extra}` : when;
+}
+
+/** Everything that should be scheduled right now, for today and tomorrow only. */
+export function planNotifications(
+  habits: Habit[],
+  idx: RecordIndex,
+  ctx: Ctx,
+  r: ReminderSettings,
+  now: Date,
+): PlannedNotification[] {
+  const out: PlannedNotification[] = [];
+  const days = [ctx.today, addDays(ctx.today, 1)];
+  const future = (d: Date) => d.getTime() > now.getTime() + 5_000;
+
+  for (const date of days) {
+    const c: Ctx = { ...ctx, today: date };
+
+    // Per-item reminders (anchors and timed habits).
+    for (const h of habits) {
+      if (!h.reminder || !h.scheduled_time || !onTimeline(h)) continue;
+      if (!visibleOn(h, idx, c, date) || stateOn(h, idx, date, c) !== 'pending') continue;
+      const at = new Date(atTime(date, h.scheduled_time).getTime() - h.remind_before * 60_000);
+      if (!future(at)) continue;
+      out.push({
+        id: `item-${h.id}-${date}`,
+        at,
+        title: h.name,
+        body: itemBody(h, h.remind_before),
+        category: 'item',
+        data: { type: 'item', habitId: h.id, date },
+      });
+    }
+
+    // Morning reminder: unfinished morning habits.
+    if (r.morningEnabled && r.morningDismissedOn !== date) {
+      const at = atTime(date, r.morningTime);
+      const m = morningPending(habits, idx, ctx, date);
+      if (future(at) && m.length) {
+        out.push({
+          id: `morning-${date}`,
+          at,
+          title: 'Good morning',
+          body: `${m.length} to do: ${list(m.map((h) => h.name))}`,
+          category: null,
+          data: { type: 'morning', date },
+        });
+      }
+    }
+
+    // Evening nudge, 2 h before the deadline, with what's left (flagged first) and a "why".
+    if (r.eveningEnabled) {
+      const at = atTime(date, nudgeStart(r));
+      const left = dayPending(habits, idx, ctx, date);
+      if (future(at) && left.length) {
+        const names = left.map((x) => (x.flagged ? `${x.habit.name} ⚑` : x.habit.name));
+        const first = left[0].habit;
+        const motivation = first.minimum_version
+          ? ` Minimum for ${first.name}: ${first.minimum_version}.`
+          : first.why
+            ? ` ${first.name}: ${first.why}`
+            : '';
+        out.push({
+          id: `evening-${date}`,
+          at,
+          title: `${left.length} left · 2 h until ${formatTime(r.eveningDeadline)}`,
+          body: `${list(names)}.${motivation}`,
+          category: null,
+          data: { type: 'evening', date },
+        });
+      }
+    }
+  }
+
+  // Snoozed ("Later") reminders.
+  for (const s of r.snoozes) {
+    const h = habits.find((x) => x.id === s.habitId);
+    const at = new Date(s.at);
+    if (!h || !future(at)) continue;
+    const c: Ctx = { ...ctx, today: s.date };
+    if (stateOn(h, idx, s.date, c) !== 'pending') continue;
+    out.push({
+      id: `snooze-${h.id}-${s.date}`,
+      at,
+      title: h.name,
+      body: h.kind === 'habit' && h.why ? `Reminder · ${h.why}` : 'Reminder',
+      category: 'item',
+      data: { type: 'item', habitId: h.id, date: s.date },
+    });
+  }
+
+  return out.sort((a, b) => a.at.getTime() - b.at.getTime()).slice(0, MAX_SCHEDULED);
+}

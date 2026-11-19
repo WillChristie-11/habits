@@ -80,3 +80,29 @@ export type HabitInput = Omit<Habit, 'id' | 'order' | 'created_at' | 'paused_fro
 
 export const isAnchor = (h: Habit) => h.kind === 'anchor';
 export const isHabit = (h: Habit) => h.kind === 'habit';
+
+export interface Snooze {
+  habitId: number;
+  date: string; // the day the item belongs to
+  at: string; // ISO time to remind again
+}
+
+export interface ReminderSettings {
+  morningEnabled: boolean;
+  morningTime: string; // 'HH:MM'
+  eveningEnabled: boolean;
+  /** evening deadline; the nudge starts 2 h before */
+  eveningDeadline: string; // 'HH:MM'
+  /** date key the morning banner was dismissed on */
+  morningDismissedOn: string | null;
+  snoozes: Snooze[];
+}
+
+export const DEFAULT_REMINDERS: ReminderSettings = {
+  morningEnabled: true,
+  morningTime: '07:30',
+  eveningEnabled: true,
+  eveningDeadline: '22:00',
+  morningDismissedOn: null,
+  snoozes: [],
+};

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { StoreProvider, useStore } from '../store';
 import { useTheme } from '../theme';
+import { NotificationBridge } from '../components/NotificationBridge';
 
 function ThemedStack() {
   const { ready } = useStore();
@@ -24,6 +25,7 @@ function ThemedStack() {
   return (
     <>
       <StatusBar style={t.dark ? 'light' : 'dark'} />
+      <NotificationBridge />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />

@@ -6,6 +6,7 @@ import { Chip, Help, Input, Label, Segmented, Stepper, Toggle } from '../compone
 import { TimeField, formatTime } from '../components/TimeField';
 import { onTimeline, toMinutes } from '../lib/schedule';
 import { WEEKDAY_NAMES } from '../lib/dates';
+import { requestPermission } from '../lib/notifications';
 import { useThemedStyles, type Theme } from '../theme';
 
 interface Props {
@@ -15,6 +16,14 @@ interface Props {
 }
 
 const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+const LEADS: [number, string][] = [
+  [0, 'At the time'],
+  [5, '5 min before'],
+  [10, '10 min'],
+  [15, '15 min'],
+  [30, '30 min'],
+  [60, '1 h'],
+];
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 type When = 'morning' | 'evening' | 'time';
@@ -51,6 +60,14 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
   const [why, setWhy] = useState(habit?.why ?? '');
   const [minimum, setMinimum] = useState(habit?.minimum_version ?? '');
   const [stackAfter, setStackAfter] = useState<number | null>(habit?.stack_after ?? null);
+  const [reminder, setReminder] = useState(habit?.reminder ?? false);
+  const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);
+  const [permDenied, setPermDenied] = useState(false);
+
+  async function toggleReminder(on: boolean) {
+    setReminder(on);
+    if (on) setPermDenied((await requestPermission()) === 'denied');
+  }
 
   const isAnchor = kind === 'anchor';
   const weekly = ftype === 'weekly_count' || ftype === 'every_n_days';
@@ -116,14 +133,35 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
       stack_after: validAnchor,
       scheduled_time: scheduled ? time : null,
       end_time: isAnchor && hasEnd ? endTime : null,
-      reminder: habit?.reminder ?? false,
-      remind_before: habit?.remind_before ?? 0,
+      reminder: scheduled && reminder,
+      remind_before: remindBefore,
       meta: habit?.meta ?? null,
     };
     if (habit) await editHabit(habit.id, input);
     else await addHabit(input);
     onClose();
   }
+
+  const reminderFields = (
+    <View style={{ marginTop: 12, gap: 10 }}>
+      <Toggle
+        label="Remind me"
+        note="Notification with Done, Later and Skip buttons."
+        value={reminder}
+        onChange={toggleReminder}
+      />
+      {reminder && (
+        <View style={s.chips}>
+          {LEADS.map(([min, label]) => (
+            <Chip key={min} label={label} active={remindBefore === min} onPress={() => setRemindBefore(min)} />
+          ))}
+        </View>
+      )}
+      {reminder && permDenied && (
+        <Help>Notifications are turned off for this app. Turn them on in iPhone Settings → Notifications.</Help>
+      )}
+    </View>
+  );
 
   const dayChips = (
     <View style={s.chips}>
@@ -200,6 +238,8 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
             )}
             <Label>Days</Label>
             {dayChips}
+            <Label>Reminder</Label>
+            {reminderFields}
           </>
         ) : (
           <>
@@ -252,6 +292,7 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
                   <View style={s.detail}>
                     <TimeField value={time} onChange={setTime} />
                     <Help>Shows on today’s schedule at this time.</Help>
+                    {reminderFields}
                   </View>
                 )}
               </>

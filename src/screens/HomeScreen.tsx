@@ -10,6 +10,9 @@ import { ProgressRing } from '../components/ProgressRing';
 import { SectionBlock } from '../components/SectionBlock';
 import { TimelineBlock } from '../components/TimelineBlock';
 import { FeelingPicker } from '../components/FeelingPicker';
+import { Banners } from '../components/Banners';
+import { MotivationSheet } from '../components/MotivationSheet';
+import { behindPace, sectionPassed } from '../lib/reminders';
 import { HabitForm } from './HabitForm';
 import { HabitDetail } from './HabitDetail';
 import { useThemedStyles, type Theme } from '../theme';
@@ -25,6 +28,7 @@ export function HomeScreen() {
   const [form, setForm] = useState<{ habit: Habit | null } | null>(null);
   const [detail, setDetail] = useState<Habit | null>(null);
   const [feeling, setFeeling] = useState<{ habit: Habit; date: string } | null>(null);
+  const [motivation, setMotivation] = useState<Habit | null>(null);
 
   const ring = todayCompletion(habits, idx, ctx);
   const layout = useMemo(
@@ -48,10 +52,18 @@ export function HomeScreen() {
     [mark, unmark, feeling, ctx.today],
   );
 
-  const onOpen = useCallback((h: Habit) => {
-    if (h.kind === 'anchor') setForm({ habit: h });
-    else setDetail(h);
-  }, []);
+  const onOpen = useCallback(
+    (h: Habit) => {
+      if (h.kind === 'anchor') return setForm({ habit: h });
+      // Unchecked and its part of the day has passed → show why / minimum version first.
+      const pending = stateOn(h, idx, ctx.today, ctx) === 'pending';
+      const behind = behindPace([h], idx, ctx).length > 0;
+      if (pending && (h.why || h.minimum_version) && sectionPassed(h, settings.reminders, new Date(), behind)) {
+        setMotivation(h);
+      } else setDetail(h);
+    },
+    [idx, ctx, settings.reminders],
+  );
 
   const onDelete = useCallback(
     (h: Habit) => {
@@ -122,6 +134,7 @@ export function HomeScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 140 }}
         keyboardShouldPersistTaps="handled"
       >
+        <Banners />
         {habits.length === 0 ? (
           <View style={s.empty}>
             <Text style={s.emptyTitle}>Start small.</Text>
@@ -162,6 +175,22 @@ export function HomeScreen() {
         />
       )}
 
+      <MotivationSheet
+        habit={motivation}
+        onClose={() => setMotivation(null)}
+        onDone={(h) => {
+          setMotivation(null);
+          onToggle(h, 'pending');
+        }}
+        onSkip={(h) => {
+          setMotivation(null);
+          mark(h.id, 'skipped');
+        }}
+        onDetails={(h) => {
+          setMotivation(null);
+          setTimeout(() => setDetail(h), 300);
+        }}
+      />
       <HabitForm visible={!!form} habit={form?.habit ?? null} onClose={() => setForm(null)} />
       <HabitDetail
         habit={detail}

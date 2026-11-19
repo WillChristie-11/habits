@@ -4,16 +4,23 @@ import { AppearanceContext, DEFAULT_APPEARANCE, type Appearance } from './theme'
 import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { todayKey } from './lib/dates';
-import type { DayRecord, Habit, HabitInput, RecordStatus } from './types';
+import type { DayRecord, Habit, HabitInput, RecordStatus, ReminderSettings } from './types';
+import { DEFAULT_REMINDERS } from './types';
+import { SNOOZE_MIN } from './lib/reminders';
 
 export interface Settings {
   feelingAutoDismiss: boolean;
   appearance: Appearance;
+  reminders: ReminderSettings;
+  /** notification taps already applied (so a replayed response isn't applied twice) */
+  handledResponses: string[];
 }
 
 const DEFAULT_SETTINGS: Settings = {
   feelingAutoDismiss: true,
   appearance: DEFAULT_APPEARANCE,
+  reminders: DEFAULT_REMINDERS,
+  handledResponses: [],
 };
 
 interface Store {
@@ -32,6 +39,10 @@ interface Store {
   unmark(habitId: number, date?: string): Promise<void>;
   rateFeeling(habitId: number, feeling: number | null, date?: string): Promise<void>;
   updateSettings(patch: Partial<Settings>): Promise<void>;
+  updateReminders(patch: Partial<ReminderSettings>): Promise<void>;
+  /** "Later": remind again in 30 min */
+  snooze(habitId: number, date: string): Promise<void>;
+  dismissMorning(): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -131,6 +142,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       async updateSettings(patch) {
         setSettings((s) => ({ ...s, ...patch }));
         await Promise.all(Object.entries(patch).map(([k, v]) => db.saveSetting(k, JSON.stringify(v))));
+      },
+      async updateReminders(patch) {
+        const next = { ...settings.reminders, ...patch };
+        setSettings((s) => ({ ...s, reminders: next }));
+        await db.saveSetting('reminders', JSON.stringify(next));
+      },
+      async snooze(habitId, date) {
+        const nowMs = Date.now();
+        const snoozes = [
+          ...settings.reminders.snoozes.filter((x) => new Date(x.at).getTime() > nowMs && x.habitId !== habitId),
+          { habitId, date, at: new Date(nowMs + SNOOZE_MIN * 60_000).toISOString() },
+        ];
+        const next = { ...settings.reminders, snoozes };
+        setSettings((s) => ({ ...s, reminders: next }));
+        await db.saveSetting('reminders', JSON.stringify(next));
+      },
+      async dismissMorning() {
+        const next = { ...settings.reminders, morningDismissedOn: today };
+        setSettings((s) => ({ ...s, reminders: next }));
+        await db.saveSetting('reminders', JSON.stringify(next));
       },
     }),
     [ready, habits, records, idx, ctx, settings, now, today, reload],

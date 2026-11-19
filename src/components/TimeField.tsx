@@ -38,9 +38,4 @@ export function TimeField({ value, onChange }: { value: string; onChange(hm: str
   );
 }
 
-/** Locale-formatted clock time, e.g. "7:30 AM". */
-export function formatTime(hm: string | null | undefined): string {
-  if (!hm) return '';
-  const [h, m] = hm.split(':').map(Number);
-  return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
+export { formatTime } from '../lib/dates';

@@ -1,14 +1,28 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
-import { Help, Label, Segmented, Toggle } from '../components/ui';
+import { Button, Help, Label, Segmented, Toggle } from '../components/ui';
+import { TimeField } from '../components/TimeField';
+import { getPermission, requestPermission, type PermissionState } from '../lib/notifications';
+import { formatTime } from '../lib/dates';
+import { nudgeStart } from '../lib/reminders';
 import { themes, useThemedStyles, type AppearanceMode, type Theme, type ThemeId } from '../theme';
 
 export function SettingsScreen() {
   const s = useThemedStyles(makeStyles);
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings, updateReminders } = useStore();
   const a = settings.appearance;
+  const r = settings.reminders;
+  const [perm, setPerm] = useState<PermissionState | null>(null);
+  useEffect(() => {
+    getPermission().then(setPerm);
+  }, []);
+  const enablePermission = async () => {
+    const p = await requestPermission();
+    setPerm(p);
+    if (p === 'denied') Linking.openSettings();
+  };
   const setAppearance = (patch: Partial<typeof a>) => updateSettings({ appearance: { ...a, ...patch } });
 
   return (
@@ -41,6 +55,51 @@ export function SettingsScreen() {
               ? 'Switches between your light and dark theme with the iPhone’s appearance.'
               : `Always uses your ${a.mode} theme.`}
           </Help>
+        </View>
+
+        <Text style={[s.group, { marginTop: 32 }]}>Reminders</Text>
+        {perm && perm !== 'granted' && perm !== 'unsupported' && (
+          <View style={s.permBox}>
+            <Help>
+              {perm === 'denied'
+                ? 'Notifications are off for this app. Banners still show in the app.'
+                : 'Allow notifications to get reminders when the app is closed.'}
+            </Help>
+            <View style={{ marginTop: 10 }}>
+              <Button
+                kind="primary"
+                title={perm === 'denied' ? 'Open iPhone Settings' : 'Turn on notifications'}
+                onPress={enablePermission}
+              />
+            </View>
+          </View>
+        )}
+        <View style={{ marginTop: 10, gap: 10 }}>
+          <Toggle
+            label="Morning reminder"
+            note="Banner + notification listing unfinished morning habits."
+            value={r.morningEnabled}
+            onChange={(v) => updateReminders({ morningEnabled: v })}
+          />
+          {r.morningEnabled && (
+            <View style={s.timeRow}>
+              <Text style={s.timeLabel}>Time</Text>
+              <TimeField value={r.morningTime} onChange={(morningTime) => updateReminders({ morningTime })} />
+            </View>
+          )}
+          <Toggle
+            label="Evening nudge"
+            note={`From ${formatTime(nudgeStart(r))}: what’s left and how long until your deadline.`}
+            value={r.eveningEnabled}
+            onChange={(v) => updateReminders({ eveningEnabled: v })}
+          />
+          <View style={s.timeRow}>
+            <Text style={s.timeLabel}>Deadline</Text>
+            <TimeField value={r.eveningDeadline} onChange={(eveningDeadline) => updateReminders({ eveningDeadline })} />
+          </View>
+        </View>
+        <View style={{ marginTop: 8 }}>
+          <Help>Reminders for anchors and timed habits are set on each item.</Help>
         </View>
 
         <Text style={[s.group, { marginTop: 32 }]}>Check-off</Text>
@@ -104,6 +163,17 @@ const makeStyles = (t: Theme) =>
     content: { padding: 16, paddingBottom: 80 },
     group: { fontSize: 17, fontWeight: '600', color: t.text },
     themes: { flexDirection: 'row', gap: 12 },
+    permBox: { backgroundColor: t.surface, borderRadius: 12, padding: 12, marginTop: 10 },
+    timeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: t.surface,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    timeLabel: { fontSize: 16, color: t.text },
     swatch: { flex: 1, borderRadius: 12, borderWidth: 1.5, padding: 10 },
     swatchActive: { borderWidth: 2.5 },
     swatchCard: { borderRadius: 8, padding: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },

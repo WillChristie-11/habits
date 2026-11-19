@@ -61,3 +61,25 @@ export function prettyDate(key: string): string {
   const d = fromKey(key);
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
+
+/** Locale-formatted clock time for 'HH:MM', e.g. "7:30 AM". */
+export function formatTime(hm: string | null | undefined): string {
+  if (!hm) return '';
+  const [h, m] = hm.split(':').map(Number);
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/** Local Date for a day key plus 'HH:MM'. */
+export function atTime(key: string, hm: string): Date {
+  const [y, mo, d] = key.split('-').map(Number);
+  const [h, m] = hm.split(':').map(Number);
+  return new Date(y, mo - 1, d, h, m, 0, 0);
+}
+
+/** "1 h 40 min", "25 min" */
+export function formatDuration(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+}
