@@ -6,6 +6,7 @@ import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
 import { behindPace, sectionPassed } from '../lib/reminders';
+import { noteFor } from '../lib/journal';
 import { FeelingPicker } from './FeelingPicker';
 import { MotivationSheet } from './MotivationSheet';
 import { HabitForm } from '../screens/HabitForm';
@@ -17,10 +18,10 @@ import { HabitDetail } from '../screens/HabitDetail';
  * Returns the handlers plus the sheets to render once at the bottom of the screen.
  */
 export function useHabitActions(date?: string) {
-  const { idx, ctx, settings, mark, unmark, rateFeeling, removeHabit } = useStore();
+  const { idx, ctx, settings, entries, mark, unmark, rateFeeling, removeHabit } = useStore();
   const day = date ?? ctx.today;
   const isToday = day === ctx.today;
-  const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind } | null>(null);
+  const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind; obstacle?: string } | null>(null);
   const [detail, setDetail] = useState<Habit | null>(null);
   const [feeling, setFeeling] = useState<{ habit: Habit; date: string } | null>(null);
   const [motivation, setMotivation] = useState<Habit | null>(null);
@@ -56,7 +57,10 @@ export function useHabitActions(date?: string) {
     [mark, unmark, day, isToday, startTimer],
   );
 
-  const openForm = useCallback((habit: Habit | null, kind: ItemKind = 'habit') => setForm({ habit, kind }), []);
+  const openForm = useCallback(
+    (habit: Habit | null, kind: ItemKind = 'habit', obstacle?: string) => setForm({ habit, kind, obstacle }),
+    [],
+  );
 
   const onOpen = useCallback(
     (h: Habit) => {
@@ -64,12 +68,18 @@ export function useHabitActions(date?: string) {
       // Today, unchecked, and its part of the day has passed → show why / minimum first.
       if (isToday && stateOn(h, idx, ctx.today, ctx) === 'pending') {
         const behind = behindPace([h], idx, ctx).length > 0;
-        const has = h.why || h.minimum_version || h.messages.length || settings.reminders.messages.length;
+        // A due note to future me is reason enough to show the sheet.
+        const has =
+          h.why ||
+          h.minimum_version ||
+          h.messages.length ||
+          settings.reminders.messages.length ||
+          noteFor(h, entries, idx, ctx);
         if (has && sectionPassed(h, settings.reminders, new Date(), behind)) return setMotivation(h);
       }
       setDetail(h);
     },
-    [isToday, idx, ctx, settings.reminders],
+    [isToday, idx, ctx, settings.reminders, entries],
   );
 
   const onDelete = useCallback(
@@ -145,6 +155,7 @@ export function useHabitActions(date?: string) {
         visible={!!form}
         habit={form?.habit ?? null}
         defaultKind={form?.kind ?? 'habit'}
+        prefillObstacle={form?.obstacle}
         onClose={() => setForm(null)}
       />
       <HabitDetail

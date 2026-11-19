@@ -162,5 +162,7 @@ export function noteFor(h: Habit, entries: JournalEntry[], idx: RecordIndex, ctx
   if (!notes.length) return null;
   const latest = notes.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)[0];
   if (latest.data.triggeredOn) return latest.data.triggeredOn === date ? latest : null;
+  // "The next time": only days after the note was written count.
+  if (date <= latest.date) return null;
   return noteTrigger(h, idx, ctx, date) ? latest : null;
 }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { useStore } from '../store';
 import { avoidLine, banners, paceText } from '../lib/reminders';
 import type { Habit } from '../types';
@@ -24,7 +25,8 @@ function AvoidLine({ h, style, onStart }: { h: Habit; style: 'step' | 'of'; onSt
 
 export function Banners({ onStart }: { onStart(h: Habit): void }) {
   const s = useThemedStyles(makeStyles);
-  const { habits, idx, ctx, now, settings, dismissMorning } = useStore();
+  const { habits, idx, ctx, now, settings, dismissMorning, entries } = useStore();
+  const reflected = entries.some((e) => e.type === 'reflection' && e.date === ctx.today);
   const [expanded, setExpanded] = useState(false);
   const list = banners(habits, idx, ctx, settings.reminders, now);
   if (!list.length) return null;
@@ -103,6 +105,11 @@ export function Banners({ onStart }: { onStart(h: Habit): void }) {
               {b.avoid.map((h) => (
                 <AvoidLine key={h.id} h={h} style="of" onStart={onStart} />
               ))}
+              {!reflected && (
+                <Pressable onPress={() => router.push('/journal')} hitSlop={6} style={{ marginTop: 8 }}>
+                  <Text style={s.reflectLink}>Reflect on today →</Text>
+                </Pressable>
+              )}
             </View>
           );
         }
@@ -141,6 +148,7 @@ const makeStyles = (t: Theme) =>
     itemName: { fontSize: 14, color: t.text, fontWeight: '500' },
     lateText: { color: status.deadline },
     flag: { color: status.flag },
+    reflectLink: { fontSize: 13, color: t.accent, fontWeight: '700' },
     dismiss: { paddingVertical: 2 },
     morningHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     avoidRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },

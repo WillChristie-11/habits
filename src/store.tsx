@@ -16,6 +16,8 @@ export interface Settings {
   handledResponses: string[];
   /** day the morning-intention prompt was last shown (answered or skipped) */
   intentionAskedOn: string | null;
+  /** week (its Monday) whose resurfaced journal entry was dismissed */
+  resurfaceDismissedWeek: string | null;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -24,6 +26,7 @@ const DEFAULT_SETTINGS: Settings = {
   reminders: DEFAULT_REMINDERS,
   handledResponses: [],
   intentionAskedOn: null,
+  resurfaceDismissedWeek: null,
 };
 
 interface Store {

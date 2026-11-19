@@ -6,6 +6,8 @@ import { Button } from './ui';
 import { useThemedStyles, type Theme } from '../theme';
 import { useStore } from '../store';
 import { avoidLine, obstacleLine, pickMessage } from '../lib/reminders';
+import { noteFor } from '../lib/journal';
+import { prettyDate } from '../lib/dates';
 
 interface Props {
   habit: Habit | null;
@@ -21,7 +23,8 @@ interface Props {
 export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
-  const { ctx, settings } = useStore();
+  const { ctx, settings, entries, idx } = useStore();
+  const note = habit ? noteFor(habit, entries, idx, ctx) : null;
   // A rotating line besides the why (which has its own block).
   const extra = habit ? pickMessage({ ...habit, why: null }, ctx.today, settings.reminders.messages) : null;
   return (
@@ -41,6 +44,12 @@ export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onC
             <View style={s.block}>
               <Text style={s.label}>Pair it with</Text>
               <Text style={s.text}>{habit.pair_with}</Text>
+            </View>
+          )}
+          {note && (
+            <View style={[s.block, s.obstacle]}>
+              <Text style={s.label}>From past you · {prettyDate(note.date)}</Text>
+              <Text style={s.text}>{note.data.text}</Text>
             </View>
           )}
           {habit.why && (

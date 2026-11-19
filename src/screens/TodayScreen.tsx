@@ -34,7 +34,9 @@ export function TodayScreen() {
   const intention = useIntention(date);
   const todaysIntention = useIntention(ctx.today);
   const [editingIntention, setEditingIntention] = useState(false);
-  const askToday = ready && habits.length > 0 && settings.intentionAskedOn !== ctx.today && !todaysIntention;
+  // Only on opening the app (not the moment a first habit is added mid-session).
+  const [hadHabitsAtOpen] = useState(() => habits.length > 0);
+  const askToday = ready && hadHabitsAtOpen && settings.intentionAskedOn !== ctx.today && !todaysIntention;
   const intentionOpen = editingIntention || askToday;
 
   const tracked = useMemo(() => habits.filter((h) => h.kind === 'habit'), [habits]);

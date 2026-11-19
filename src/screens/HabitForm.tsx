@@ -17,6 +17,8 @@ interface Props {
   habit: Habit | null; // null = new
   /** For new items: start as a habit or an anchor. */
   defaultKind?: ItemKind;
+  /** Prefill an obstacle plan (from a journal "What got in the way?" entry). */
+  prefillObstacle?: string;
   onClose(): void;
 }
 
@@ -35,16 +37,28 @@ type When = 'morning' | 'evening' | 'time';
 
 const sectionForTime = (hm: string): Section => (toMinutes(hm) < 12 * 60 ? 'morning' : 'evening');
 
-export function HabitForm({ visible, habit, defaultKind = 'habit', onClose }: Props) {
+export function HabitForm({ visible, habit, defaultKind = 'habit', prefillObstacle, onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.screen}>{visible && <FormBody habit={habit} defaultKind={defaultKind} onClose={onClose} />}</View>
+      <View style={s.screen}>{visible && (
+          <FormBody habit={habit} defaultKind={defaultKind} prefillObstacle={prefillObstacle} onClose={onClose} />
+        )}</View>
     </Modal>
   );
 }
 
-function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaultKind: ItemKind; onClose(): void }) {
+function FormBody({
+  habit,
+  defaultKind,
+  prefillObstacle,
+  onClose,
+}: {
+  habit: Habit | null;
+  defaultKind: ItemKind;
+  prefillObstacle?: string;
+  onClose(): void;
+}) {
   const s = useThemedStyles(makeStyles);
   const { habits, addHabit, editHabit } = useStore();
 
@@ -77,7 +91,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   // null = no plan; a string (even empty) = the plan fields are open.
   const [planWhen, setPlanWhen] = useState<string | null>(habit?.plan_when ?? null);
   const [planAction, setPlanAction] = useState(habit?.plan_action ?? '');
-  const [obstacle, setObstacle] = useState<string | null>(habit?.obstacle ?? null);
+  const [obstacle, setObstacle] = useState<string | null>(prefillObstacle ?? habit?.obstacle ?? null);
   const [stackAfter, setStackAfter] = useState<number | null>(habit?.stack_after ?? null);
   const [reminder, setReminder] = useState(habit?.reminder ?? false);
   const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);

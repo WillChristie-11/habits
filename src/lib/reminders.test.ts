@@ -230,3 +230,11 @@ test('obstacle plan names the minimum version when there is one', () => {
   assert.equal(obstacleLine({ ...h, minimum_version: null }), "If I'm wiped out, then I'll do the minimum version.");
   assert.equal(obstacleLine({ ...h, obstacle: null }), null);
 });
+
+test('a due note to future me becomes the reminder text', () => {
+  const h = habit(daily, { name: 'Read', scheduled_time: '21:00', reminder: true });
+  const note = { id: 1, type: 'note' as const, date: '2026-11-15', habit_id: h.id, data: { text: 'One page counts.' }, created_at: '', updated_at: '' };
+  // missed yesterday (18th) → never-miss-twice today → note is due
+  const plan = planNotifications([h], indexRecords([rec(h, '2026-11-17')]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'), [note]);
+  assert.equal(plan.find((p) => p.data.date === TODAY)!.body, 'Past you: “One page counts.”');
+});

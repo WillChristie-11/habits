@@ -28,6 +28,13 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <SymbolView name="calendar" tintColor={color} size={size} />,
         }}
       />
+      <Tabs.Screen
+        name="journal"
+        options={{
+          title: 'Journal',
+          tabBarIcon: ({ color, size }) => <SymbolView name="book" tintColor={color} size={size} />,
+        }}
+      />
     </Tabs>
   );
 }

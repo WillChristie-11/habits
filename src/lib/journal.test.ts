@@ -132,4 +132,7 @@ test('notes to future me: want habits on never-miss-twice, avoid habits after 2+
   const delivered = { ...note, data: { ...note.data, triggeredOn: '2026-11-19' } };
   assert.ok(noteFor(avoid, [delivered], idx, ctx));
   assert.equal(noteFor(avoid, [delivered], idx, { today: '2026-11-20' }), null);
+  // never on the day it was written, even if the habit has already slipped
+  const sameDay = entry('note', '2026-11-19', { text: 'x' }, avoid.id);
+  assert.equal(noteFor(avoid, [sameDay], idx, ctx), null);
 });
