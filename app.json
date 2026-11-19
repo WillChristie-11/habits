@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "habits",
+    "name": "Habits",
     "slug": "habits",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.personal.habits"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,6 +21,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-sharing"
+    ]
   }
 }
