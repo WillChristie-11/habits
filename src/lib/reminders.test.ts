@@ -3,9 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
-import { indexRecords } from './schedule';
+import { indexRecords, missedTwiceRisk, todayCompletion } from './schedule';
 import { avoidLine, banners, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
-import { missedTwiceRisk, todayCompletion } from './schedule';
 
 const TODAY = '2026-11-19'; // Thursday
 const ctx = { today: TODAY };
