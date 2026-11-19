@@ -128,7 +128,8 @@ export function WeekStrip({ selected, onSelect }: Props) {
           {tracked.map((h) => {
             const tl = timeline(h, idx, days[0], days[6], ctx);
             const p = progress(h, idx, days, ctx);
-            const text = p.target != null ? `${p.done}/${p.target}` : p.pct == null ? '—' : `${Math.round(p.pct * 100)}%`;
+            const text =
+              h.habit_kind === 'avoid' ? '' : p.target != null ? `${p.done}/${p.target}` : p.pct == null ? '—' : `${Math.round(p.pct * 100)}%`;
             return (
               <View key={h.id} style={s.gridRow}>
                 <Text style={s.gridName} numberOfLines={1}>

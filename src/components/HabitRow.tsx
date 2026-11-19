@@ -103,8 +103,11 @@ export function HabitRow({
     );
   if (editMode && dimmed) metaParts.push(<Text key="nt" style={s.meta}>{isToday ? 'not today' : 'not due this day'}</Text>);
 
-  const weekText =
-    week.target != null ? `${week.done}/${week.target}` : week.pct == null ? '—' : `${Math.round(week.pct * 100)}%`;
+  const avoid = h.habit_kind === 'avoid';
+  // Avoid habits never show counts or %.
+  const weekText = avoid
+    ? ''
+    : week.target != null ? `${week.done}/${week.target}` : week.pct == null ? '—' : `${Math.round(week.pct * 100)}%`;
 
   return (
     <View
@@ -150,7 +153,7 @@ export function HabitRow({
       ) : compact ? null : (
         <Pressable onPress={onOpen} style={s.right}>
           <DotRow states={dotStates} />
-          <Text style={s.pct}>{weekText}</Text>
+          {!!weekText && <Text style={s.pct}>{weekText}</Text>}
         </Pressable>
       )}
     </View>

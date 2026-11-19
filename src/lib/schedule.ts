@@ -157,7 +157,8 @@ export const visibleToday = (h: Habit, idx: RecordIndex, ctx: Ctx) => visibleOn(
 
 /** "Never miss twice": missed yesterday and not done today. */
 export function missedTwiceRisk(h: Habit, idx: RecordIndex, ctx: Ctx): boolean {
-  if (h.kind === 'anchor' || h.frequency.type === 'weekly_count') return false;
+  // Avoid habits never get "missed yesterday".
+  if (h.kind === 'anchor' || h.habit_kind === 'avoid' || h.frequency.type === 'weekly_count') return false;
   const y = addDays(ctx.today, -1);
   const tl = timeline(h, idx, y, ctx.today, ctx);
   return tl.states.get(y) === 'missed' && tl.states.get(ctx.today) === 'pending';
@@ -168,7 +169,8 @@ export function dayCompletion(habits: Habit[], idx: RecordIndex, ctx: Ctx, date:
   let done = 0;
   let total = 0;
   for (const h of habits) {
-    if (h.kind === 'anchor' || h.frequency.type === 'weekly_count') continue;
+    // Avoid habits stay out of counts (starting one still checks it off on its row).
+    if (h.kind === 'anchor' || h.habit_kind === 'avoid' || h.frequency.type === 'weekly_count') continue;
     const s = stateOn(h, idx, date, ctx);
     if (s === 'done') {
       done++;
@@ -339,7 +341,7 @@ export function periodSummary(habits: Habit[], idx: RecordIndex, days: string[],
   let expected = 0;
   const last = days[days.length - 1];
   for (const h of habits) {
-    if (h.kind !== 'habit' || habitStart(h, idx.get(h.id)) > last) continue;
+    if (h.kind !== 'habit' || h.habit_kind === 'avoid' || habitStart(h, idx.get(h.id)) > last) continue;
     const p = progress(h, idx, days, ctx);
     if (p.target != null) {
       done += Math.min(p.done, p.target);

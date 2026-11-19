@@ -5,7 +5,7 @@ import type { Habit } from '../types';
 import { Button } from './ui';
 import { useThemedStyles, type Theme } from '../theme';
 import { useStore } from '../store';
-import { pickMessage } from '../lib/reminders';
+import { avoidLine, pickMessage } from '../lib/reminders';
 
 interface Props {
   habit: Habit | null;
@@ -30,14 +30,14 @@ export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onC
       {habit && (
         <View style={[s.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <Text style={s.name}>{habit.name}</Text>
-          <Text style={s.lead}>Still time to do a little.</Text>
-          {habit.ladder[habit.ladder_index] && (
+          <Text style={s.lead}>{habit.habit_kind === 'avoid' ? avoidLine(habit) : 'Still time to do a little.'}</Text>
+          {habit.habit_kind !== 'avoid' && habit.ladder[habit.ladder_index] && (
             <View style={s.block}>
               <Text style={s.label}>Next step</Text>
               <Text style={s.text}>{habit.ladder[habit.ladder_index]}</Text>
             </View>
           )}
-          {habit.pair_with && (
+          {habit.habit_kind !== 'avoid' && habit.pair_with && (
             <View style={s.block}>
               <Text style={s.label}>Pair it with</Text>
               <Text style={s.text}>{habit.pair_with}</Text>

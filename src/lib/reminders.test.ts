@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
 import { indexRecords } from './schedule';
-import { banners, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
+import { avoidLine, banners, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
+import { missedTwiceRisk, todayCompletion } from './schedule';
 
 const TODAY = '2026-11-19'; // Thursday
 const ctx = { today: TODAY };
@@ -166,4 +167,45 @@ test('avoid habits get a "Start N min" notification button; want habits get Done
   const cat = (h: Habit) => plan.find((p) => p.id === `item-${h.id}-${TODAY}`)!.category;
   assert.equal(cat(apply), 'start-20');
   assert.equal(cat(read), 'item');
+});
+
+test('avoid wording: time box + next step, pair-with as a question, "of" form without a ladder', () => {
+  const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', ladder: ['Find 1 role', 'Save it'], ladder_index: 1 });
+  assert.equal(avoidLine(a), '15 min: Save it');
+  assert.equal(avoidLine(a, 'of'), '15 min of Apply');
+  assert.equal(avoidLine({ ...a, ladder: [] }), '15 min of Apply');
+  assert.equal(avoidLine({ ...a, pair_with: 'good coffee' }), 'good coffee + 15 min: Save it?');
+});
+
+test('avoid habits: never counted, flagged or behind pace; own lines in the nudges', () => {
+  const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', session_minutes: 20 });
+  const w = habit(daily, { name: 'Read', section: 'evening' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'Lift', section: 'week', habit_kind: 'avoid' });
+  const idx = indexRecords([]); // both missed yesterday
+  assert.equal(missedTwiceRisk(a, idx, ctx), false);
+  assert.equal(missedTwiceRisk(w, idx, ctx), true);
+  assert.deepEqual(todayCompletion([a, w], idx, ctx), { done: 0, total: 1, pct: 0 });
+  assert.equal(behindPace([lift], idx, { today: '2026-11-21' }).length, 0);
+
+  const plan = planNotifications([a, w], idx, ctx, R, at('06:00'));
+  const evening = plan.find((p) => p.id === `evening-${TODAY}`)!;
+  assert.match(evening.title, /^1 left/); // Read only
+  assert.match(evening.body, /^Read ⚑\.\n20 min of Apply$/);
+  const morning = plan.find((p) => p.id === `morning-${TODAY}`)!;
+  assert.equal(morning.body, '20 min of Apply');
+
+  // only avoid habits left → no count at all
+  const onlyAvoid = planNotifications([a], idx, ctx, R, at('06:00')).find((p) => p.id === `evening-${TODAY}`)!;
+  assert.equal(onlyAvoid.title, 'Still time for 20 min of Apply');
+
+  const b = banners([a, w], idx, ctx, R, at('20:30'));
+  const ev = b.find((x) => x.kind === 'evening');
+  assert.ok(ev && ev.kind === 'evening' && ev.items.length === 1 && ev.avoid.length === 1);
+});
+
+test('avoid item reminders lead with the time box', () => {
+  const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', scheduled_time: '18:00', reminder: true, ladder: ['Find 1 role'] });
+  const p = planNotifications([a], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'))[0];
+  assert.equal(p.title, '15 min: Find 1 role');
+  assert.equal(p.category, 'start-15');
 });

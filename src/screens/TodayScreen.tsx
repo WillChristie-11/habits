@@ -65,7 +65,7 @@ export function TodayScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} />}
-        {isToday && <Banners />}
+        {isToday && <Banners onStart={actions.startTimer} />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
         {!isToday && (
           <Text style={s.pastHint}>Editing {dateLine}. Tap a circle to mark it done, long-press for a rest day.</Text>

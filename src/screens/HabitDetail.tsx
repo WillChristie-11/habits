@@ -29,7 +29,9 @@ export function HabitDetail({ habit, onClose, onEdit, onStart }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={!!habit} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.screen}>{habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} />}</View>
+      <View style={styles.screen}>
+        {habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} />}
+      </View>
     </Modal>
   );
 }
@@ -94,9 +96,7 @@ function Body({
           <View style={styles.week}>
             {days.map((d) => (
               <View key={d} style={styles.day}>
-                <Text style={[styles.dayLabel, d === ctx.today && styles.dayToday]}>
-                  {WEEKDAY_SHORT[weekday(d)]}
-                </Text>
+                <Text style={[styles.dayLabel, d === ctx.today && styles.dayToday]}>{WEEKDAY_SHORT[weekday(d)]}</Text>
                 <Dot state={tl.states.get(d) ?? 'none'} size={20} />
               </View>
             ))}
@@ -112,16 +112,18 @@ function Body({
         </View>
 
         <View style={[styles.card, styles.stats]}>
-          <Stat
-            label="This week"
-            value={
-              week.target != null
-                ? `${week.done}/${week.target}`
-                : week.pct == null
-                  ? '—'
-                  : `${Math.round(week.pct * 100)}%`
-            }
-          />
+          {h.habit_kind !== 'avoid' && (
+            <Stat
+              label="This week"
+              value={
+                week.target != null
+                  ? `${week.done}/${week.target}`
+                  : week.pct == null
+                    ? '—'
+                    : `${Math.round(week.pct * 100)}%`
+              }
+            />
+          )}
           <Stat
             label="Usually feel"
             value={feel.avg != null ? feelingLabel(feel.avg) : '—'}
@@ -159,9 +161,7 @@ function Body({
         )}
 
         <View style={{ gap: 10, marginTop: 16 }}>
-          {todayState !== 'paused' && (
-            <Button title={`Start ${h.session_minutes} min`} onPress={() => onStart(h)} />
-          )}
+          {todayState !== 'paused' && <Button title={`Start ${h.session_minutes} min`} onPress={() => onStart(h)} />}
           {todayState === 'skipped' ? (
             <Button kind="secondary" title="Undo skip" onPress={() => unmark(h.id)} />
           ) : todayState !== 'done' && todayState !== 'paused' ? (
@@ -186,24 +186,45 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
-  screen: { flex: 1, backgroundColor: t.background },
-  dayToday: { color: t.text, fontWeight: '700' },
-  stepDone: { color: t.textMuted, textDecorationLine: 'line-through' },
-  stepNext: { fontWeight: '700' },
-  bar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
-  barBtn: { fontSize: 16, color: t.accent },
-  content: { padding: 16, paddingBottom: 60 },
-  name: { fontSize: 26, fontWeight: '700', color: t.text },
-  sub: { fontSize: 14, color: t.textMuted, marginTop: 4 },
-  card: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginTop: 16 },
-  cardLabel: { fontSize: 12, fontWeight: '600', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  cardText: { fontSize: 16, color: t.text, marginTop: 4, lineHeight: 22 },
-  week: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
-  day: { alignItems: 'center', gap: 6 },
-  dayLabel: { fontSize: 12, color: t.textMuted },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendText: { fontSize: 12, color: t.textMuted },
-  stats: { flexDirection: 'row' },
-  statValue: { fontSize: 22, fontWeight: '600', color: t.text, marginTop: 4 },
-});
+    screen: { flex: 1, backgroundColor: t.background },
+    dayToday: { color: t.text, fontWeight: '700' },
+    stepDone: { color: t.textMuted, textDecorationLine: 'line-through' },
+    stepNext: { fontWeight: '700' },
+    bar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 8,
+    },
+    barBtn: { fontSize: 16, color: t.accent },
+    content: { padding: 16, paddingBottom: 60 },
+    name: { fontSize: 26, fontWeight: '700', color: t.text },
+    sub: { fontSize: 14, color: t.textMuted, marginTop: 4 },
+    card: {
+      backgroundColor: t.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginTop: 16,
+    },
+    cardLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: t.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    cardText: { fontSize: 16, color: t.text, marginTop: 4, lineHeight: 22 },
+    week: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: 12,
+    },
+    day: { alignItems: 'center', gap: 6 },
+    dayLabel: { fontSize: 12, color: t.textMuted },
+    legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    legendText: { fontSize: 12, color: t.textMuted },
+    stats: { flexDirection: 'row' },
+    statValue: { fontSize: 22, fontWeight: '600', color: t.text, marginTop: 4 },
+  });
