@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
 import { indexRecords, missedTwiceRisk, todayCompletion } from './schedule';
-import { avoidLine, banners, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
+import { avoidLine, banners, ifThenLine, obstacleLine, suggestPlanWhen, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
 
 const TODAY = '2026-11-19'; // Thursday
 const ctx = { today: TODAY };
@@ -26,6 +26,9 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     ladder: [],
     ladder_index: 0,
     pair_with: null,
+    plan_when: null,
+    plan_action: null,
+    obstacle: null,
     frequency,
     order: 0,
     stack_after: null,
@@ -207,4 +210,23 @@ test('avoid item reminders lead with the time box', () => {
   const p = planNotifications([a], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'))[0];
   assert.equal(p.title, '15 min: Find 1 role');
   assert.equal(p.category, 'start-15');
+});
+
+test('if-then plan wording, prefill, and use as the reminder text', () => {
+  const h = habit(daily, { name: 'Meditate', scheduled_time: '07:30', reminder: true, plan_when: "I've poured my coffee", plan_action: 'Meditate for 2 minutes' });
+  assert.equal(ifThenLine(h), "When I've poured my coffee, I will meditate for 2 minutes.");
+  assert.equal(ifThenLine({ ...h, plan_action: null }), "When I've poured my coffee, I will meditate.");
+  assert.equal(ifThenLine({ ...h, plan_when: '  ' }), null);
+  assert.equal(suggestPlanWhen('Breakfast', '08:00'), 'Breakfast is done');
+  assert.match(suggestPlanWhen(null, '08:00'), /^it's 8:00/);
+  assert.equal(suggestPlanWhen(null, null), '');
+  const p = planNotifications([h], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'))[0];
+  assert.match(p.body, /When I've poured my coffee, I will meditate for 2 minutes\.$/);
+});
+
+test('obstacle plan names the minimum version when there is one', () => {
+  const h = habit(daily, { obstacle: "I'm wiped out", minimum_version: 'one stretch' });
+  assert.equal(obstacleLine(h), "If I'm wiped out, then I'll do the minimum: one stretch.");
+  assert.equal(obstacleLine({ ...h, minimum_version: null }), "If I'm wiped out, then I'll do the minimum version.");
+  assert.equal(obstacleLine({ ...h, obstacle: null }), null);
 });

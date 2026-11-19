@@ -9,6 +9,7 @@ import { Dot } from '../components/Dots';
 import { Button } from '../components/ui';
 import { useThemedStyles, type Theme } from '../theme';
 import { formatTime } from '../components/TimeField';
+import { ifThenLine, obstacleLine } from '../lib/reminders';
 
 interface Props {
   habit: Habit | null;
@@ -130,6 +131,23 @@ function Body({
             note={feel.count ? `${feel.count} ratings` : 'no ratings yet'}
           />
         </View>
+
+        {(ifThenLine(h) || obstacleLine(h)) && (
+          <View style={styles.card}>
+            {ifThenLine(h) && (
+              <>
+                <Text style={styles.cardLabel}>Plan</Text>
+                <Text style={styles.cardText}>{ifThenLine(h)}</Text>
+              </>
+            )}
+            {obstacleLine(h) && (
+              <>
+                <Text style={[styles.cardLabel, ifThenLine(h) ? { marginTop: 12 } : null]}>If it gets hard</Text>
+                <Text style={styles.cardText}>{obstacleLine(h)}</Text>
+              </>
+            )}
+          </View>
+        )}
 
         {(h.ladder.length > 0 || h.pair_with) && (
           <View style={styles.card}>

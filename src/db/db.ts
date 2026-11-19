@@ -8,7 +8,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -74,6 +74,16 @@ async function open() {
       `);
     });
   }
+  if (version < 5) {
+    // v5: if-then plan and obstacle plan.
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE habits ADD COLUMN plan_when TEXT;
+        ALTER TABLE habits ADD COLUMN plan_action TEXT;
+        ALTER TABLE habits ADD COLUMN obstacle TEXT;
+      `);
+    });
+  }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }
@@ -92,6 +102,9 @@ interface HabitRow {
   ladder: string | null;
   ladder_index: number;
   pair_with: string | null;
+  plan_when: string | null;
+  plan_action: string | null;
+  obstacle: string | null;
   name: string;
   section: Section;
   why: string | null;
@@ -144,6 +157,9 @@ function rowToHabit(r: HabitRow): Habit {
     ladder: parseMessages(r.ladder),
     ladder_index: r.ladder_index ?? 0,
     pair_with: r.pair_with,
+    plan_when: r.plan_when,
+    plan_action: r.plan_action,
+    obstacle: r.obstacle,
     frequency,
     order: r.sort_order,
     stack_after: r.stack_after,
@@ -181,8 +197,8 @@ export async function createHabit(input: HabitInput): Promise<number> {
   const res = await db.runAsync(
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
        scheduled_time, end_time, reminder, remind_before, meta, messages,
-       habit_kind, session_minutes, ladder, ladder_index, pair_with, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       habit_kind, session_minutes, ladder, ladder_index, pair_with, plan_when, plan_action, obstacle, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
     input.section,
@@ -202,6 +218,9 @@ export async function createHabit(input: HabitInput): Promise<number> {
     JSON.stringify(input.ladder),
     input.ladder_index,
     input.pair_with,
+    input.plan_when,
+    input.plan_action,
+    input.obstacle,
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -229,6 +248,9 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     JSON.stringify(input.ladder),
     input.ladder_index,
     input.pair_with,
+    input.plan_when,
+    input.plan_action,
+    input.obstacle,
   ];
   if (current && current.section !== input.section) {
     // Moving sections: append to the end of the new one, and detach anything stacked on it.
@@ -245,7 +267,8 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
   await db.runAsync(
     `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
        scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?,
-       habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?${orderClause}
+       habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?,
+       plan_when = ?, plan_action = ?, obstacle = ?${orderClause}
      WHERE id = ?`,
     ...params,
   );

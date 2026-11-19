@@ -5,7 +5,7 @@ import type { Habit } from '../types';
 import { Button } from './ui';
 import { useThemedStyles, type Theme } from '../theme';
 import { useStore } from '../store';
-import { avoidLine, pickMessage } from '../lib/reminders';
+import { avoidLine, obstacleLine, pickMessage } from '../lib/reminders';
 
 interface Props {
   habit: Habit | null;
@@ -61,6 +61,12 @@ export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onC
               <Text style={s.text}>{habit.minimum_version}</Text>
             </View>
           )}
+          {obstacleLine(habit) && (
+            <View style={[s.block, s.obstacle]}>
+              <Text style={s.label}>Your plan for this</Text>
+              <Text style={s.text}>{obstacleLine(habit)}</Text>
+            </View>
+          )}
           <View style={{ gap: 8, marginTop: 18 }}>
             {habit.habit_kind === 'avoid' ? (
               <Button title={`Start ${habit.session_minutes} min`} onPress={() => onStart(habit)} />
@@ -98,6 +104,7 @@ const makeStyles = (t: Theme) =>
     },
     name: { fontSize: 22, fontWeight: '700', color: t.text },
     lead: { fontSize: 14, color: t.textMuted, marginTop: 2 },
+    obstacle: { borderLeftWidth: 3, borderLeftColor: t.accent },
     block: { backgroundColor: t.surface, borderRadius: 12, padding: 12, marginTop: 12 },
     label: { fontSize: 12, fontWeight: '600', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
     text: { fontSize: 16, color: t.text, marginTop: 4, lineHeight: 22 },

@@ -35,6 +35,29 @@ export function avoidLine(h: Habit, style: 'step' | 'of' = 'step'): string {
   return h.pair_with ? `${h.pair_with} + ${box}?` : box;
 }
 
+/** "When I've had coffee, I will meditate." or null when the plan isn't filled in. */
+export function ifThenLine(h: Habit): string | null {
+  const when = h.plan_when?.trim();
+  const action = h.plan_action?.trim() || h.name;
+  return when ? `When ${when}, I will ${lowerFirst(action)}.` : null;
+}
+
+/** "If I'm exhausted, then I'll do the minimum: one stretch." */
+export function obstacleLine(h: Habit): string | null {
+  const o = h.obstacle?.trim();
+  if (!o) return null;
+  return h.minimum_version ? `If ${o}, then I'll do the minimum: ${h.minimum_version}.` : `If ${o}, then I'll do the minimum version.`;
+}
+
+/** Prefill for the plan's "when": from what it's stacked after, else its scheduled time. */
+export function suggestPlanWhen(anchorName: string | null, scheduledTime: string | null): string {
+  if (anchorName) return `${anchorName} is done`;
+  if (scheduledTime) return `it's ${formatTime(scheduledTime)}`;
+  return '';
+}
+
+const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
+
 /** Avoid habits still open on `date` (for their own line in banners and notifications). */
 export function avoidPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date = ctx.today, section?: Habit['section']): Habit[] {
   const c = { ...ctx, today: date };
@@ -189,14 +212,16 @@ export function pickMessage(h: Habit | null, date: string, general: string[]): s
 
 function avoidBody(h: Habit, minutesBefore: number, date: string, general: string[]): string {
   const when = minutesBefore > 0 ? `In ${formatDuration(minutesBefore)}` : 'Now';
-  const extra = pickMessage(h, date, general) ?? 'Just start; starting counts.';
+  const extra = ifThenLine(h) ?? pickMessage(h, date, general) ?? 'Just start; starting counts.';
   return `${when} · ${extra}`;
 }
 
 function itemBody(h: Habit, minutesBefore: number, date: string, general: string[]): string {
   const when = minutesBefore > 0 ? `In ${formatDuration(minutesBefore)}` : formatTime(h.scheduled_time);
   if (h.kind === 'anchor') return h.end_time ? `${when} · until ${formatTime(h.end_time)}` : when;
-  const extra = pickMessage(h, date, general) ?? (h.minimum_version ? `Minimum: ${h.minimum_version}` : null);
+  // The if-then plan, when present, is the reminder text.
+  const extra =
+    ifThenLine(h) ?? pickMessage(h, date, general) ?? (h.minimum_version ? `Minimum: ${h.minimum_version}` : null);
   return extra ? `${when} · ${extra}` : when;
 }
 

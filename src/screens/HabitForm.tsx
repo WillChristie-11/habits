@@ -7,6 +7,7 @@ import { TimeField, formatTime } from '../components/TimeField';
 import { onTimeline, toMinutes } from '../lib/schedule';
 import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
+import { suggestPlanWhen } from '../lib/reminders';
 import { MessageList } from '../components/MessageList';
 import { StepList } from '../components/StepList';
 import { useThemedStyles, type Theme } from '../theme';
@@ -73,6 +74,10 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [ladder, setLadder] = useState<string[]>(habit?.ladder ?? []);
   const [ladderIndex, setLadderIndex] = useState(habit?.ladder_index ?? 0);
   const [pairWith, setPairWith] = useState(habit?.pair_with ?? '');
+  // null = no plan; a string (even empty) = the plan fields are open.
+  const [planWhen, setPlanWhen] = useState<string | null>(habit?.plan_when ?? null);
+  const [planAction, setPlanAction] = useState(habit?.plan_action ?? '');
+  const [obstacle, setObstacle] = useState<string | null>(habit?.obstacle ?? null);
   const [stackAfter, setStackAfter] = useState<number | null>(habit?.stack_after ?? null);
   const [reminder, setReminder] = useState(habit?.reminder ?? false);
   const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);
@@ -112,6 +117,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
         .filter((h) => !createsLoop(h))
         .sort((a, b) => Number(onTimeline(b)) - Number(onTimeline(a)) || (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? ''));
   const validAnchor = stackAfter != null && candidates.some((a) => a.id === stackAfter) ? stackAfter : null;
+  const anchorName = validAnchor != null ? (habits.find((x) => x.id === validAnchor)?.name ?? null) : null;
+  const openPlan = () => {
+    setPlanWhen(suggestPlanWhen(anchorName, scheduled ? time : null));
+    if (!planAction.trim()) setPlanAction(name.trim().toLowerCase());
+  };
 
   const daysOk = isAnchor || ftype !== 'specific_days' ? true : days.length > 0;
   const anchorDaysOk = !isAnchor || days.length > 0;
@@ -150,6 +160,9 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
       ladder: isAnchor ? [] : ladder,
       ladder_index: isAnchor ? 0 : Math.min(ladderIndex, ladder.length),
       pair_with: isAnchor ? null : pairWith.trim() || null,
+      plan_when: isAnchor ? null : planWhen?.trim() || null,
+      plan_action: isAnchor || !planWhen?.trim() ? null : planAction.trim() || null,
+      obstacle: isAnchor ? null : obstacle?.trim() || null,
       stack_after: validAnchor,
       scheduled_time: scheduled ? time : null,
       end_time: isAnchor && hasEnd ? endTime : null,
@@ -383,6 +396,48 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
             <Label hint="optional">Pair with</Label>
             <Input value={pairWith} onChangeText={setPairWith} placeholder="e.g. good coffee" />
 
+            <Label hint="optional">If-then plan</Label>
+            {planWhen == null ? (
+              <Pressable onPress={openPlan} style={s.addPlan} accessibilityRole="button">
+                <Text style={s.addPlanText}>＋ Add an if-then plan</Text>
+              </Pressable>
+            ) : (
+              <View style={s.planBox}>
+                <View style={s.planRow}>
+                  <Text style={s.planWord}>When</Text>
+                  <Input value={planWhen} onChangeText={setPlanWhen} placeholder="I’ve poured my coffee" style={{ flex: 1 }} />
+                </View>
+                <View style={s.planRow}>
+                  <Text style={s.planWord}>I will</Text>
+                  <Input value={planAction} onChangeText={setPlanAction} placeholder={name.trim().toLowerCase() || 'do it'} style={{ flex: 1 }} />
+                </View>
+                <Pressable onPress={() => setPlanWhen(null)} hitSlop={8}>
+                  <Text style={s.removePlan}>Remove plan</Text>
+                </Pressable>
+              </View>
+            )}
+            <View style={{ marginTop: 8 }}>
+              <Help>Used as the reminder’s text. Plans tied to a cue are easier to follow.</Help>
+            </View>
+
+            <Label hint="optional">Obstacle plan</Label>
+            {obstacle == null ? (
+              <Pressable onPress={() => setObstacle('')} style={s.addPlan} accessibilityRole="button">
+                <Text style={s.addPlanText}>＋ Add an obstacle plan</Text>
+              </Pressable>
+            ) : (
+              <View style={s.planBox}>
+                <View style={s.planRow}>
+                  <Text style={s.planWord}>If</Text>
+                  <Input value={obstacle} onChangeText={setObstacle} placeholder="I’m wiped out after work" style={{ flex: 1 }} autoFocus />
+                </View>
+                <Text style={s.planTail}>then I’ll do the minimum version{minimum.trim() ? `: ${minimum.trim()}` : '.'}</Text>
+                <Pressable onPress={() => setObstacle(null)} hitSlop={8}>
+                  <Text style={s.removePlan}>Remove</Text>
+                </Pressable>
+              </View>
+            )}
+
             <Label hint="optional">Why</Label>
             <Input value={why} onChangeText={setWhy} placeholder="What this does for you" multiline />
 
@@ -420,4 +475,11 @@ const makeStyles = (t: Theme) =>
     content: { padding: 16, paddingBottom: 80 },
     detail: { marginTop: 12, gap: 8 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    addPlan: { borderRadius: 10, borderWidth: 1, borderColor: t.border, paddingVertical: 11, paddingHorizontal: 12 },
+    addPlanText: { color: t.accent, fontWeight: '600', fontSize: 15 },
+    planBox: { gap: 8 },
+    planRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    planWord: { width: 46, fontSize: 15, fontWeight: '600', color: t.text },
+    planTail: { fontSize: 15, color: t.text, marginLeft: 56 },
+    removePlan: { fontSize: 13, color: t.textMuted, marginLeft: 56, marginTop: 2 },
   });

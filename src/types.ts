@@ -45,6 +45,11 @@ export interface Habit {
   ladder_index: number;
   /** Something pleasant to pair the session with, e.g. "good coffee". */
   pair_with: string | null;
+  /** Implementation intention: "When <plan_when>, I will <plan_action>." */
+  plan_when: string | null;
+  plan_action: string | null;
+  /** Obstacle plan: "If <obstacle>, then I'll do the minimum version." */
+  obstacle: string | null;
   /** Anchors use daily or specific_days only. */
   frequency: Frequency;
   order: number;
