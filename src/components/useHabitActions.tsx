@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { ActionSheetIOS, Alert, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
@@ -24,20 +25,35 @@ export function useHabitActions(date?: string) {
   const [feeling, setFeeling] = useState<{ habit: Habit; date: string } | null>(null);
   const [motivation, setMotivation] = useState<Habit | null>(null);
 
+  /** Open the full-screen session timer (starting it is what counts for avoid habits). */
+  const startTimer = useCallback(
+    (h: Habit) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      router.push({ pathname: '/timer', params: { habitId: String(h.id), date: day } });
+    },
+    [day],
+  );
+
   const onToggle = useCallback(
     async (h: Habit, state: DayState) => {
+      // Avoid habits: today, an unchecked circle starts a session instead of just ticking.
+      if (h.kind === 'habit' && h.habit_kind === 'avoid' && isToday && state === 'pending') {
+        startTimer(h);
+        return;
+      }
       if (state === 'done' || state === 'skipped') {
         Haptics.selectionAsync().catch(() => {});
         setFeeling((f) => (f?.habit.id === h.id ? null : f));
         await unmark(h.id, day);
       } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        // Anchors get a success haptic from their own completion animation.
+        if (h.kind === 'habit') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
         await mark(h.id, 'done', day);
         // Anchors are just dismissed: no feeling score.
         if (h.kind === 'habit') setFeeling({ habit: h, date: day });
       }
     },
-    [mark, unmark, day],
+    [mark, unmark, day, isToday, startTimer],
   );
 
   const openForm = useCallback((habit: Habit | null, kind: ItemKind = 'habit') => setForm({ habit, kind }), []);
@@ -112,6 +128,10 @@ export function useHabitActions(date?: string) {
           setMotivation(null);
           onToggle(h, 'pending');
         }}
+        onStart={(h) => {
+          setMotivation(null);
+          setTimeout(() => startTimer(h), 250);
+        }}
         onSkip={(h) => {
           setMotivation(null);
           mark(h.id, 'skipped', day);
@@ -129,6 +149,10 @@ export function useHabitActions(date?: string) {
       />
       <HabitDetail
         habit={detail}
+        onStart={(h) => {
+          setDetail(null);
+          setTimeout(() => startTimer(h), 350);
+        }}
         onClose={() => setDetail(null)}
         onEdit={(h) => {
           setDetail(null);
@@ -139,5 +163,5 @@ export function useHabitActions(date?: string) {
     </>
   );
 
-  return { onToggle, onOpen, onLongPress, onDelete, openForm, overlays };
+  return { onToggle, onOpen, onLongPress, onDelete, openForm, startTimer, overlays };
 }

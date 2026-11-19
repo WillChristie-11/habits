@@ -40,24 +40,26 @@ export function Stepper({
   max = 30,
   onChange,
   suffix,
+  step = 1,
 }: {
   value: number;
   min?: number;
   max?: number;
   onChange(v: number): void;
   suffix?: string;
+  step?: number;
 }) {
   const s = useThemedStyles(makeStyles);
   return (
     <View style={s.stepper}>
-      <Pressable style={s.stepBtn} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}>
+      <Pressable style={s.stepBtn} onPress={() => onChange(Math.max(min, value - step))} hitSlop={6}>
         <Text style={s.stepBtnText}>−</Text>
       </Pressable>
       <Text style={s.stepValue}>
         {value}
         {suffix ? ` ${suffix}` : ''}
       </Text>
-      <Pressable style={s.stepBtn} onPress={() => onChange(Math.min(max, value + 1))} hitSlop={6}>
+      <Pressable style={s.stepBtn} onPress={() => onChange(Math.min(max, value + step))} hitSlop={6}>
         <Text style={s.stepBtnText}>+</Text>
       </Pressable>
     </View>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { Frequency, FrequencyType, Habit, HabitInput, ItemKind, Section } from '../types';
+import type { Frequency, FrequencyType, Habit, HabitInput, HabitKind, ItemKind, Section } from '../types';
 import { useStore } from '../store';
 import { Chip, Help, Input, Label, Segmented, Stepper, Toggle } from '../components/ui';
 import { TimeField, formatTime } from '../components/TimeField';
@@ -8,6 +8,7 @@ import { onTimeline, toMinutes } from '../lib/schedule';
 import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
 import { MessageList } from '../components/MessageList';
+import { StepList } from '../components/StepList';
 import { useThemedStyles, type Theme } from '../theme';
 
 interface Props {
@@ -67,6 +68,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [why, setWhy] = useState(habit?.why ?? '');
   const [minimum, setMinimum] = useState(habit?.minimum_version ?? '');
   const [messages, setMessages] = useState<string[]>(habit?.messages ?? []);
+  const [habitKind, setHabitKind] = useState<HabitKind>(habit?.habit_kind ?? 'want');
+  const [sessionMin, setSessionMin] = useState(habit?.session_minutes ?? 15);
+  const [ladder, setLadder] = useState<string[]>(habit?.ladder ?? []);
+  const [ladderIndex, setLadderIndex] = useState(habit?.ladder_index ?? 0);
+  const [pairWith, setPairWith] = useState(habit?.pair_with ?? '');
   const [stackAfter, setStackAfter] = useState<number | null>(habit?.stack_after ?? null);
   const [reminder, setReminder] = useState(habit?.reminder ?? false);
   const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);
@@ -139,6 +145,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
       why: isAnchor ? null : why.trim() || null,
       minimum_version: isAnchor ? null : minimum.trim() || null,
       messages: isAnchor ? [] : messages,
+      habit_kind: isAnchor ? 'want' : habitKind,
+      session_minutes: sessionMin,
+      ladder: isAnchor ? [] : ladder,
+      ladder_index: isAnchor ? 0 : Math.min(ladderIndex, ladder.length),
+      pair_with: isAnchor ? null : pairWith.trim() || null,
       stack_after: validAnchor,
       scheduled_time: scheduled ? time : null,
       end_time: isAnchor && hasEnd ? endTime : null,
@@ -252,6 +263,23 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
           </>
         ) : (
           <>
+            <Label>Type</Label>
+            <Segmented<HabitKind>
+              value={habitKind}
+              onChange={setHabitKind}
+              options={[
+                { value: 'want', label: 'Want to do' },
+                { value: 'avoid', label: 'Tend to avoid' },
+              ]}
+            />
+            <View style={{ marginTop: 8 }}>
+              <Help>
+                {habitKind === 'avoid'
+                  ? 'For things you put off. It counts as done as soon as you start a short timed session.'
+                  : 'Counts as done when you check it off.'}
+              </Help>
+            </View>
+
             <Label>How often</Label>
             <Segmented<FrequencyType>
               value={ftype}
@@ -328,6 +356,32 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
                 )}
               </>
             )}
+
+            <Label>Session</Label>
+            <Stepper value={sessionMin} min={5} max={120} step={5} onChange={setSessionMin} suffix="min" />
+            <View style={{ marginTop: 8 }}>
+              <Help>
+                {habitKind === 'avoid'
+                  ? `“Start ${sessionMin} min” opens a timer; starting is what counts.`
+                  : `“Start ${sessionMin} min” is in the habit’s details if you want a timer.`}
+              </Help>
+            </View>
+
+            <Label hint="optional">Ladder</Label>
+            <StepList
+              steps={ladder}
+              current={ladderIndex}
+              onChange={(steps, cur) => {
+                setLadder(steps);
+                setLadderIndex(cur);
+              }}
+            />
+            <View style={{ marginTop: 8 }}>
+              <Help>Small concrete steps in order. The row shows only the next one; after a session you can move up a step.</Help>
+            </View>
+
+            <Label hint="optional">Pair with</Label>
+            <Input value={pairWith} onChangeText={setPairWith} placeholder="e.g. good coffee" />
 
             <Label hint="optional">Why</Label>
             <Input value={why} onChangeText={setWhy} placeholder="What this does for you" multiline />

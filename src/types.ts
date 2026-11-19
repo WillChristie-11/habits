@@ -3,6 +3,9 @@ export type Section = 'morning' | 'evening' | 'week';
 /** "habit" is tracked (%, feeling, dots). "anchor" is a scheduled routine item (Wake up, Work). */
 export type ItemKind = 'habit' | 'anchor';
 
+/** want = something you want to do (done when finished); avoid = something you put off (done once started). */
+export type HabitKind = 'want' | 'avoid';
+
 export type FrequencyType = 'daily' | 'weekly_count' | 'specific_days' | 'every_n_days';
 
 export interface Frequency {
@@ -32,6 +35,16 @@ export interface Habit {
   minimum_version: string | null;
   /** Extra motivational lines; rotate in notifications alongside `why`. */
   messages: string[];
+  /** Habits only. Named habit_kind because `kind` already separates habits from anchors. */
+  habit_kind: HabitKind;
+  /** Length of a "Start N min" session. */
+  session_minutes: number;
+  /** Ordered small concrete steps; the row shows only ladder[ladder_index]. */
+  ladder: string[];
+  /** Index of the next step (== ladder.length when the ladder is finished). */
+  ladder_index: number;
+  /** Something pleasant to pair the session with, e.g. "good coffee". */
+  pair_with: string | null;
   /** Anchors use daily or specific_days only. */
   frequency: Frequency;
   order: number;

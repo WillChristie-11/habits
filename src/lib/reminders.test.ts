@@ -21,6 +21,11 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     why: null,
     minimum_version: null,
     messages: [],
+    habit_kind: 'want',
+    session_minutes: 15,
+    ladder: [],
+    ladder_index: 0,
+    pair_with: null,
     frequency,
     order: 0,
     stack_after: null,
@@ -152,4 +157,13 @@ test('motivational messages rotate daily through why, own messages, then the gen
   const plan = planNotifications([t], indexRecords([]), ctx, { ...R, morningEnabled: false }, at('06:00'));
   assert.match(plan.find((p) => p.id.startsWith('item-'))!.body, /one page counts$/);
   assert.match(plan.find((p) => p.id.startsWith('evening-'))!.body, /\none page counts$/);
+});
+
+test('avoid habits get a "Start N min" notification button; want habits get Done', () => {
+  const apply = habit(daily, { name: 'Apply', habit_kind: 'avoid', session_minutes: 20, scheduled_time: '18:00', reminder: true });
+  const read = habit(daily, { name: 'Read', scheduled_time: '21:00', reminder: true });
+  const plan = planNotifications([apply, read], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'));
+  const cat = (h: Habit) => plan.find((p) => p.id === `item-${h.id}-${TODAY}`)!.category;
+  assert.equal(cat(apply), 'start-20');
+  assert.equal(cat(read), 'item');
 });

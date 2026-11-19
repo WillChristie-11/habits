@@ -32,6 +32,8 @@ export interface RowProps {
   date?: string;
   /** Show the habit's scheduled time in its meta line (plain lists, not the timeline). */
   showTime?: boolean;
+  /** Smaller row without dots or % (Schedule tab). */
+  compact?: boolean;
 }
 
 export function HabitRow({
@@ -46,6 +48,7 @@ export function HabitRow({
   focus,
   date,
   showTime,
+  compact,
 }: RowProps) {
   const { idx, ctx } = useStore();
   const s = useThemedStyles(makeStyles);
@@ -77,6 +80,9 @@ export function HabitRow({
 
   const metaParts: React.ReactNode[] = [];
   if (focus) metaParts.push(<Text key="focus" style={s.next}>{focus}</Text>);
+  const nextStep = h.ladder[h.ladder_index];
+  if (nextStep && today !== 'done') metaParts.push(<Text key="step" style={s.stepText} numberOfLines={1}>→ {nextStep}</Text>);
+  if (h.pair_with && today !== 'done') metaParts.push(<Text key="pair" style={s.meta}>+ {h.pair_with}</Text>);
   if (showTime && h.scheduled_time) metaParts.push(<Text key="time" style={s.meta}>{formatTime(h.scheduled_time)}</Text>);
   if (!isToday && today === 'missed') metaParts.push(<Text key="missed" style={s.meta}>missed · tap to mark done</Text>);
   if (!isToday && dayFeeling != null) metaParts.push(<Text key="df" style={s.meta}>felt {FEELINGS[dayFeeling - 1]}</Text>);
@@ -104,13 +110,14 @@ export function HabitRow({
     <View
       style={[
         s.row,
-        { marginLeft: row.depth * 22 },
+        compact && s.rowCompact,
+        { marginLeft: row.depth * (compact ? 16 : 22) },
         (isNext || focus) && s.rowNext,
         risk && s.rowRisk,
         dimmed && { opacity: 0.55 },
       ]}
     >
-      {row.depth > 0 && <View style={s.stackLine} />}
+      {row.depth > 0 && !compact && <View style={s.stackLine} />}
       <Leading editMode={editMode} dragHandlers={dragHandlers}>
         <Pressable
           onPress={() => onToggle(today)}
@@ -140,7 +147,7 @@ export function HabitRow({
 
       {editMode ? (
         <DeleteButton onDelete={onDelete} />
-      ) : (
+      ) : compact ? null : (
         <Pressable onPress={onOpen} style={s.right}>
           <DotRow states={dotStates} />
           <Text style={s.pct}>{weekText}</Text>
@@ -203,6 +210,7 @@ export const makeStyles = (t: Theme) =>
       minHeight: 56,
     },
     rowNext: { backgroundColor: t.accentSoft },
+    rowCompact: { minHeight: 46, paddingVertical: 8, borderRadius: 10, marginBottom: 5 },
     rowRisk: { borderLeftWidth: 3, borderLeftColor: status.flag },
     stackLine: {
       position: 'absolute',
@@ -242,6 +250,7 @@ export const makeStyles = (t: Theme) =>
     overdue: { color: status.flag },
     next: { fontSize: 12, color: t.accent, fontWeight: '600' },
     risk: { fontSize: 12, color: status.flag, fontWeight: '600' },
+    stepText: { fontSize: 12, color: t.text, fontWeight: '500', flexShrink: 1 },
     right: { alignItems: 'flex-end', marginLeft: 8 },
     pct: { fontSize: 11, color: t.textMuted, marginTop: 3, fontVariant: ['tabular-nums'] },
     x: { padding: 6 },

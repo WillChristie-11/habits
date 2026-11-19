@@ -8,7 +8,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -62,6 +62,18 @@ async function open() {
     // v3: per-habit motivational messages (JSON array of strings).
     await db.execAsync(`ALTER TABLE habits ADD COLUMN messages TEXT;`);
   }
+  if (version < 4) {
+    // v4: want / avoid habits, timed sessions, step ladders, "pair with".
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE habits ADD COLUMN habit_kind TEXT NOT NULL DEFAULT 'want';
+        ALTER TABLE habits ADD COLUMN session_minutes INTEGER NOT NULL DEFAULT 15;
+        ALTER TABLE habits ADD COLUMN ladder TEXT;
+        ALTER TABLE habits ADD COLUMN ladder_index INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE habits ADD COLUMN pair_with TEXT;
+      `);
+    });
+  }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }
@@ -75,6 +87,11 @@ interface HabitRow {
   remind_before: number;
   meta: string | null;
   messages: string | null;
+  habit_kind: string;
+  session_minutes: number;
+  ladder: string | null;
+  ladder_index: number;
+  pair_with: string | null;
   name: string;
   section: Section;
   why: string | null;
@@ -122,6 +139,11 @@ function rowToHabit(r: HabitRow): Habit {
     why: r.why,
     minimum_version: r.minimum_version,
     messages: parseMessages(r.messages),
+    habit_kind: r.habit_kind === 'avoid' ? 'avoid' : 'want',
+    session_minutes: r.session_minutes || 15,
+    ladder: parseMessages(r.ladder),
+    ladder_index: r.ladder_index ?? 0,
+    pair_with: r.pair_with,
     frequency,
     order: r.sort_order,
     stack_after: r.stack_after,
@@ -158,8 +180,9 @@ export async function createHabit(input: HabitInput): Promise<number> {
   );
   const res = await db.runAsync(
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
-       scheduled_time, end_time, reminder, remind_before, meta, messages, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       scheduled_time, end_time, reminder, remind_before, meta, messages,
+       habit_kind, session_minutes, ladder, ladder_index, pair_with, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
     input.section,
@@ -174,6 +197,11 @@ export async function createHabit(input: HabitInput): Promise<number> {
     input.remind_before,
     input.meta ? JSON.stringify(input.meta) : null,
     JSON.stringify(input.messages),
+    input.habit_kind,
+    input.session_minutes,
+    JSON.stringify(input.ladder),
+    input.ladder_index,
+    input.pair_with,
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -196,6 +224,11 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.remind_before,
     input.meta ? JSON.stringify(input.meta) : null,
     JSON.stringify(input.messages),
+    input.habit_kind,
+    input.session_minutes,
+    JSON.stringify(input.ladder),
+    input.ladder_index,
+    input.pair_with,
   ];
   if (current && current.section !== input.section) {
     // Moving sections: append to the end of the new one, and detach anything stacked on it.
@@ -211,7 +244,8 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
   params.push(id);
   await db.runAsync(
     `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
-       scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?${orderClause}
+       scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?,
+       habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?${orderClause}
      WHERE id = ?`,
     ...params,
   );
@@ -237,18 +271,25 @@ export async function setRecord(
   date: string,
   status: RecordStatus,
   feeling: number | null = null,
+  meta: Meta | null = null,
 ): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO records (habit_id, date, status, feeling, timestamp) VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO records (habit_id, date, status, feeling, timestamp, meta) VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT (habit_id, date) DO UPDATE SET status = excluded.status, feeling = excluded.feeling,
-       timestamp = excluded.timestamp`,
+       timestamp = excluded.timestamp, meta = excluded.meta`,
     habitId,
     date,
     status,
     feeling,
     new Date().toISOString(),
+    meta ? JSON.stringify(meta) : null,
   );
+}
+
+export async function setLadderIndex(habitId: number, index: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE habits SET ladder_index = ? WHERE id = ?', index, habitId);
 }
 
 export async function setFeeling(habitId: number, date: string, feeling: number | null): Promise<void> {

@@ -351,3 +351,17 @@ export function periodSummary(habits: Habit[], idx: RecordIndex, days: string[],
   }
   return { done, expected, pct: expected > 0 ? done / expected : null };
 }
+
+/** The anchor to show on Today: the current one (Now) or the next upcoming (Next). */
+export function nextAnchor(
+  habits: Habit[],
+  idx: RecordIndex,
+  ctx: Ctx,
+  nowMin: number,
+): { anchor: Habit; label: 'Now' | 'Next' } | null {
+  const anchors = habits.filter((h) => h.kind === 'anchor');
+  const rows = layoutDay(anchors, (h) => visibleOn(h, idx, ctx)).timeline;
+  const f = timelineFocus(rows, (h) => stateOn(h, idx, ctx.today, ctx), nowMin);
+  const anchor = f ? anchors.find((a) => a.id === f.id) : undefined;
+  return anchor && f ? { anchor, label: f.label } : null;
+}

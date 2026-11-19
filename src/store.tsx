@@ -40,6 +40,14 @@ interface Store {
   rateFeeling(habitId: number, feeling: number | null, date?: string): Promise<void>;
   updateSettings(patch: Partial<Settings>): Promise<void>;
   updateReminders(patch: Partial<ReminderSettings>): Promise<void>;
+  /**
+   * Begin a timed session. Avoid habits count as done the moment a session starts, so the
+   * record is written now (with the session in its meta).
+   */
+  startSession(h: Habit, date?: string): Promise<void>;
+  /** Finish a session: want habits are marked done now. */
+  finishSession(h: Habit, date?: string): Promise<void>;
+  advanceLadder(h: Habit): Promise<void>;
   /** "Later": remind again in 30 min */
   snooze(habitId: number, date: string): Promise<void>;
   dismissMorning(): Promise<void>;
@@ -147,6 +155,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const next = { ...settings.reminders, ...patch };
         setSettings((s) => ({ ...s, reminders: next }));
         await db.saveSetting('reminders', JSON.stringify(next));
+      },
+      async startSession(h, date = today) {
+        if (h.kind !== 'habit' || h.habit_kind !== 'avoid') return;
+        const step = h.ladder[h.ladder_index] ?? null;
+        await db.setRecord(h.id, date, 'done', null, {
+          session: { startedAt: new Date().toISOString(), minutes: h.session_minutes, step },
+        });
+        await reload();
+      },
+      async finishSession(h, date = today) {
+        if (h.habit_kind === 'avoid') return; // already done at start
+        const existing = records.find((r) => r.habit_id === h.id && r.date === date);
+        if (existing?.status === 'done') return;
+        await db.setRecord(h.id, date, 'done', null, {
+          session: { finishedAt: new Date().toISOString(), minutes: h.session_minutes },
+        });
+        await reload();
+      },
+      async advanceLadder(h) {
+        await db.setLadderIndex(h.id, Math.min(h.ladder.length, h.ladder_index + 1));
+        await reload();
       },
       async snooze(habitId, date) {
         const nowMs = Date.now();

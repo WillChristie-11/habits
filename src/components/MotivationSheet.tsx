@@ -10,13 +10,15 @@ import { pickMessage } from '../lib/reminders';
 interface Props {
   habit: Habit | null;
   onDone(h: Habit): void;
+  /** Start a timed session (primary for avoid habits). */
+  onStart(h: Habit): void;
   onSkip(h: Habit): void;
   onDetails(h: Habit): void;
   onClose(): void;
 }
 
 /** Shown when tapping an unchecked habit after its part of the day has passed. */
-export function MotivationSheet({ habit, onDone, onSkip, onDetails, onClose }: Props) {
+export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { ctx, settings } = useStore();
@@ -29,6 +31,18 @@ export function MotivationSheet({ habit, onDone, onSkip, onDetails, onClose }: P
         <View style={[s.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <Text style={s.name}>{habit.name}</Text>
           <Text style={s.lead}>Still time to do a little.</Text>
+          {habit.ladder[habit.ladder_index] && (
+            <View style={s.block}>
+              <Text style={s.label}>Next step</Text>
+              <Text style={s.text}>{habit.ladder[habit.ladder_index]}</Text>
+            </View>
+          )}
+          {habit.pair_with && (
+            <View style={s.block}>
+              <Text style={s.label}>Pair it with</Text>
+              <Text style={s.text}>{habit.pair_with}</Text>
+            </View>
+          )}
           {habit.why && (
             <View style={s.block}>
               <Text style={s.label}>Why</Text>
@@ -48,7 +62,11 @@ export function MotivationSheet({ habit, onDone, onSkip, onDetails, onClose }: P
             </View>
           )}
           <View style={{ gap: 8, marginTop: 18 }}>
-            <Button title={habit.minimum_version ? 'Did the minimum ✓' : 'Done ✓'} onPress={() => onDone(habit)} />
+            {habit.habit_kind === 'avoid' ? (
+              <Button title={`Start ${habit.session_minutes} min`} onPress={() => onStart(habit)} />
+            ) : (
+              <Button title={habit.minimum_version ? 'Did the minimum ✓' : 'Done ✓'} onPress={() => onDone(habit)} />
+            )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1 }}>
                 <Button kind="secondary" title="Skip today" onPress={() => onSkip(habit)} />

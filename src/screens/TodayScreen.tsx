@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import type { Section } from '../types';
 import { useStore } from '../store';
 import { dayCompletion, layoutDay, visibleOn } from '../lib/schedule';
@@ -11,6 +10,8 @@ import { SectionBlock } from '../components/SectionBlock';
 import { Banners } from '../components/Banners';
 import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
+import { ScreenHeader } from '../components/ScreenHeader';
+import { NextAnchorLine } from '../components/NextAnchorLine';
 import { useThemedStyles, type Theme } from '../theme';
 
 const SECTIONS: Section[] = ['morning', 'evening', 'week'];
@@ -43,41 +44,27 @@ export function TodayScreen() {
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      <View style={s.header}>
-        <View style={{ flex: 1 }}>
-          <View style={s.dateRow}>
-            <Text style={s.date}>{dateLine}</Text>
-            <Pressable onPress={() => router.push('/settings')} hitSlop={10} accessibilityLabel="Settings">
-              <Text style={s.gear}>⚙︎</Text>
-            </Pressable>
-          </View>
-          <Text style={s.title}>{title}</Text>
-          <View style={s.actions}>
-            {!isToday && (
-              <Pressable onPress={() => setPicked(null)} hitSlop={8}>
-                <Text style={[s.action, { fontWeight: '600' }]}>← Back to today</Text>
-              </Pressable>
-            )}
-            {isToday && tracked.length > 0 && (
-              <Pressable onPress={() => setEditMode((e) => !e)} hitSlop={8}>
-                <Text style={[s.action, editMode && { fontWeight: '600' }]}>{editMode ? 'Done' : 'Edit'}</Text>
-              </Pressable>
-            )}
-            {isToday && (
-              <Pressable onPress={() => actions.openForm(null)} hitSlop={8}>
-                <Text style={s.action}>＋ Add</Text>
-              </Pressable>
-            )}
-          </View>
-        </View>
-        {ring.total > 0 && <ProgressRing done={ring.done} total={ring.total} />}
-      </View>
+      <ScreenHeader
+        dateLine={dateLine}
+        title={title}
+        right={ring.total > 0 ? <ProgressRing done={ring.done} total={ring.total} /> : null}
+        onAdd={isToday ? () => actions.openForm(null) : undefined}
+        addLabel="Habit"
+        links={
+          isToday
+            ? tracked.length > 0
+              ? [{ label: editMode ? 'Done' : 'Edit', onPress: () => setEditMode((e) => !e), strong: editMode }]
+              : []
+            : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]
+        }
+      />
 
       <ScrollView
         scrollEnabled={scrollEnabled}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
       >
+        {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} />}
         {isToday && <Banners />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
         {!isToday && (
@@ -121,13 +108,6 @@ export function TodayScreen() {
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: t.background },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
-    dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    date: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
-    gear: { fontSize: 16, color: t.textMuted },
-    title: { fontSize: 32, fontWeight: '700', color: t.text, marginTop: 2 },
-    actions: { flexDirection: 'row', gap: 18, marginTop: 6, minHeight: 20 },
-    action: { fontSize: 15, color: t.accent },
     pastHint: { fontSize: 13, color: t.textMuted, marginTop: 12, marginHorizontal: 4, lineHeight: 18 },
     none: { fontSize: 15, color: t.textMuted, marginTop: 24, textAlign: 'center' },
     empty: { alignItems: 'center', marginTop: 80, paddingHorizontal: 24 },

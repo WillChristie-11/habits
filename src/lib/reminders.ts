@@ -126,10 +126,14 @@ export interface PlannedNotification {
   at: Date;
   title: string;
   body: string;
-  /** 'item' notifications get Done / Later / Skip buttons */
-  category: 'item' | null;
+  /** 'item' → Done / Later / Skip buttons; 'start-N' → Start N min / Later / Skip (avoid habits) */
+  category: string | null;
   data: { type: 'item' | 'morning' | 'evening'; habitId?: number; date: string };
 }
+
+/** Avoid habits get a "Start N min" button instead of "Done". */
+export const itemCategory = (h: Habit) =>
+  h.kind === 'habit' && h.habit_kind === 'avoid' ? `start-${h.session_minutes}` : 'item';
 
 const withLine = (text: string, line: string | null) => (line ? `${text}\n${line}` : text);
 
@@ -185,7 +189,7 @@ export function planNotifications(
         at,
         title: h.name,
         body: itemBody(h, h.remind_before, date, r.messages),
-        category: 'item',
+        category: itemCategory(h),
         data: { type: 'item', habitId: h.id, date },
       });
     }
@@ -239,7 +243,7 @@ export function planNotifications(
       at,
       title: h.name,
       body: (h.kind === 'habit' && pickMessage(h, s.date, r.messages)) || 'Reminder',
-      category: 'item',
+      category: itemCategory(h),
       data: { type: 'item', habitId: h.id, date: s.date },
     });
   }

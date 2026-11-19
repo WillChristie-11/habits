@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '../store';
 import { layoutDay, visibleToday } from '../lib/schedule';
 import { TimelineBlock } from '../components/TimelineBlock';
 import { useHabitActions } from '../components/useHabitActions';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { useThemedStyles, type Theme } from '../theme';
 
 /** Today's plan: anchors and timed habits at their times, flexible habits in their windows. */
@@ -24,23 +25,18 @@ export function ScheduleScreen() {
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      <View style={s.header}>
-        <Text style={s.date}>{dateLine}</Text>
-        <Text style={s.title}>Schedule</Text>
-        <View style={s.actions}>
-          {habits.length > 0 && (
-            <Pressable onPress={() => setEditMode((e) => !e)} hitSlop={8}>
-              <Text style={[s.action, editMode && { fontWeight: '600' }]}>{editMode ? 'Done' : 'Edit'}</Text>
-            </Pressable>
-          )}
-          <Pressable onPress={() => actions.openForm(null, 'anchor')} hitSlop={8}>
-            <Text style={s.action}>＋ Anchor</Text>
-          </Pressable>
-          <Pressable onPress={() => actions.openForm(null, 'habit')} hitSlop={8}>
-            <Text style={s.action}>＋ Habit</Text>
-          </Pressable>
-        </View>
-      </View>
+      <ScreenHeader
+        dateLine={dateLine}
+        title="Schedule"
+        onAdd={() => actions.openForm(null, 'anchor')}
+        addLabel="Anchor"
+        links={[
+          { label: '＋ Habit', onPress: () => actions.openForm(null, 'habit') },
+          ...(habits.length > 0
+            ? [{ label: editMode ? 'Done' : 'Edit', onPress: () => setEditMode((e) => !e), strong: editMode }]
+            : []),
+        ]}
+      />
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 120 }}>
         {anchors === 0 && (
@@ -71,11 +67,6 @@ export function ScheduleScreen() {
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: t.background },
-    header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
-    date: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
-    title: { fontSize: 32, fontWeight: '700', color: t.text, marginTop: 2 },
-    actions: { flexDirection: 'row', gap: 18, marginTop: 6 },
-    action: { fontSize: 15, color: t.accent },
     tip: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginBottom: 16 },
     tipTitle: { fontSize: 15, fontWeight: '600', color: t.text },
     tipText: { fontSize: 14, color: t.textMuted, marginTop: 4, lineHeight: 20 },

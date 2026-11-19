@@ -14,6 +14,7 @@ interface Props {
   habit: Habit | null;
   onClose(): void;
   onEdit(h: Habit): void;
+  onStart(h: Habit): void;
 }
 
 const LEGEND: { state: DayState; label: string }[] = [
@@ -24,16 +25,26 @@ const LEGEND: { state: DayState; label: string }[] = [
   { state: 'none', label: 'Not due' },
 ];
 
-export function HabitDetail({ habit, onClose, onEdit }: Props) {
+export function HabitDetail({ habit, onClose, onEdit, onStart }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={!!habit} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.screen}>{habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} />}</View>
+      <View style={styles.screen}>{habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} />}</View>
     </Modal>
   );
 }
 
-function Body({ habit: h0, onClose, onEdit }: { habit: Habit; onClose(): void; onEdit(h: Habit): void }) {
+function Body({
+  habit: h0,
+  onClose,
+  onEdit,
+  onStart,
+}: {
+  habit: Habit;
+  onClose(): void;
+  onEdit(h: Habit): void;
+  onStart(h: Habit): void;
+}) {
   const { habits, idx, ctx, mark, unmark } = useStore();
   const styles = useThemedStyles(makeStyles);
   const h = habits.find((x) => x.id === h0.id) ?? h0;
@@ -118,7 +129,39 @@ function Body({ habit: h0, onClose, onEdit }: { habit: Habit; onClose(): void; o
           />
         </View>
 
-        <View style={{ gap: 10, marginTop: 8 }}>
+        {(h.ladder.length > 0 || h.pair_with) && (
+          <View style={styles.card}>
+            {h.ladder.length > 0 && (
+              <>
+                <Text style={styles.cardLabel}>Ladder</Text>
+                {h.ladder.map((step, i) => (
+                  <Text
+                    key={`${i}-${step}`}
+                    style={[
+                      styles.cardText,
+                      i < h.ladder_index && styles.stepDone,
+                      i === h.ladder_index && styles.stepNext,
+                    ]}
+                  >
+                    {i < h.ladder_index ? '✓ ' : `${i + 1}. `}
+                    {step}
+                  </Text>
+                ))}
+              </>
+            )}
+            {h.pair_with && (
+              <>
+                <Text style={[styles.cardLabel, h.ladder.length ? { marginTop: 12 } : null]}>Pair with</Text>
+                <Text style={styles.cardText}>{h.pair_with}</Text>
+              </>
+            )}
+          </View>
+        )}
+
+        <View style={{ gap: 10, marginTop: 16 }}>
+          {todayState !== 'paused' && (
+            <Button title={`Start ${h.session_minutes} min`} onPress={() => onStart(h)} />
+          )}
           {todayState === 'skipped' ? (
             <Button kind="secondary" title="Undo skip" onPress={() => unmark(h.id)} />
           ) : todayState !== 'done' && todayState !== 'paused' ? (
@@ -145,6 +188,8 @@ const makeStyles = (t: Theme) =>
   StyleSheet.create({
   screen: { flex: 1, backgroundColor: t.background },
   dayToday: { color: t.text, fontWeight: '700' },
+  stepDone: { color: t.textMuted, textDecorationLine: 'line-through' },
+  stepNext: { fontWeight: '700' },
   bar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   barBtn: { fontSize: 16, color: t.accent },
   content: { padding: 16, paddingBottom: 60 },

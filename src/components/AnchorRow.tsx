@@ -1,44 +1,98 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import type { DayState, Habit } from '../types';
 import { useThemedStyles, type Theme } from '../theme';
 import { DeleteButton } from './HabitRow';
-import { formatTime } from './TimeField';
+import { formatTime } from '../lib/dates';
+
+/**
+ * Completion animation shared by anchor rows and the next-anchor line: a tint sweeps
+ * across the row, the check pops in, and a success haptic fires.
+ */
+export function useDoneAnimation(done: boolean) {
+  const [sweep] = useState(() => new Animated.Value(done ? 1 : 0));
+  const [pop] = useState(() => new Animated.Value(done ? 1 : 0));
+  const prev = useRef(done);
+  useEffect(() => {
+    if (!prev.current && done) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      sweep.setValue(0);
+      pop.setValue(0);
+      Animated.parallel([
+        Animated.timing(sweep, { toValue: 1, duration: 380, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+        Animated.spring(pop, { toValue: 1, friction: 4, tension: 160, useNativeDriver: false }),
+      ]).start();
+    } else if (prev.current && !done) {
+      sweep.setValue(0);
+      pop.setValue(0);
+    }
+    prev.current = done;
+  }, [done, sweep, pop]);
+  return { sweep, pop };
+}
+
+export function AnchorCheck({ pop, done, size = 28 }: { pop: Animated.Value; done: boolean; size?: number }) {
+  const s = useThemedStyles(makeStyles);
+  return (
+    <View style={[s.check, { width: size, height: size, borderRadius: size / 2 }, done && s.checkDone]}>
+      <Animated.Text
+        style={[
+          s.checkMark,
+          { transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }], opacity: pop },
+        ]}
+      >
+        ✓
+      </Animated.Text>
+    </View>
+  );
+}
 
 interface Props {
   anchor: Habit;
   state: DayState;
   editMode: boolean;
   focus?: 'Now' | 'Next' | null;
-  /** single tap: dismiss / un-dismiss */
+  /** single tap: done / undo */
   onToggle(): void;
   onOpen(): void;
   onDelete(): void;
 }
 
-/** A scheduled routine item (Wake up, Work). Not tracked: no %, no dots, no feeling. */
+/** A key activity on the schedule (Wake up, Work). Not tracked: no %, no dots, no feeling. */
 export function AnchorRow({ anchor, state, editMode, focus, onToggle, onOpen, onDelete }: Props) {
   const s = useThemedStyles(makeStyles);
-  const dismissed = state === 'done' || state === 'skipped';
+  const done = state === 'done' || state === 'skipped';
+  const { sweep, pop } = useDoneAnimation(done);
+  // The start time is on the rail beside the card; the card only adds the end.
+  const range = anchor.end_time ? `until ${formatTime(anchor.end_time)}` : null;
   return (
     <Pressable
       onPress={editMode ? undefined : onToggle}
       onLongPress={editMode ? undefined : onOpen}
       delayLongPress={350}
-      style={[s.row, focus && s.focus, dismissed && s.dismissed]}
+      style={({ pressed }) => [s.row, focus && s.focus, pressed && !editMode && { transform: [{ scale: 0.985 }] }]}
       accessibilityRole="button"
-      accessibilityState={{ checked: dismissed }}
-      accessibilityLabel={`${anchor.name}${dismissed ? ', done' : ''}`}
-      accessibilityHint="Tap to dismiss. Long-press to edit."
+      accessibilityState={{ checked: done }}
+      accessibilityLabel={`${anchor.name}${done ? ', done' : ''}`}
+      accessibilityHint="Tap to mark done. Long-press to edit."
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[s.sweep, { width: sweep.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]}
+      />
       <View style={{ flex: 1 }}>
-        <Text style={[s.name, dismissed && s.nameDone]} numberOfLines={1}>
+        <Text style={[s.name, done && s.nameDone]} numberOfLines={1}>
           {anchor.name}
         </Text>
-        {(anchor.end_time || focus) && (
-          <View style={s.metaRow}>
-            {focus && <Text style={s.focusText}>{focus}</Text>}
-            {anchor.end_time && <Text style={s.meta}>until {formatTime(anchor.end_time)}</Text>}
+        {(focus || range) && (
+          <View style={s.topLine}>
+            {focus && (
+              <View style={s.pill}>
+                <Text style={s.pillText}>{focus}</Text>
+              </View>
+            )}
+            {range && <Text style={s.range}>{range}</Text>}
           </View>
         )}
       </View>
@@ -50,7 +104,7 @@ export function AnchorRow({ anchor, state, editMode, focus, onToggle, onOpen, on
           <DeleteButton onDelete={onDelete} />
         </>
       ) : (
-        dismissed && <Text style={s.tick}>✓</Text>
+        <AnchorCheck pop={pop} done={done} />
       )}
     </Pressable>
   );
@@ -61,21 +115,32 @@ const makeStyles = (t: Theme) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      minHeight: 46,
-      paddingVertical: 9,
+      minHeight: 60,
+      paddingVertical: 10,
       paddingHorizontal: 14,
-      borderRadius: 12,
-      borderWidth: 1,
+      borderRadius: 14,
+      backgroundColor: t.surface,
+      borderWidth: 1.5,
       borderColor: t.border,
-      marginBottom: 6,
+      marginBottom: 8,
+      overflow: 'hidden',
     },
-    focus: { borderColor: t.accent, backgroundColor: t.accentSoft },
-    dismissed: { opacity: 0.55 },
-    name: { fontSize: 15, fontWeight: '600', color: t.text },
-    nameDone: { color: t.textMuted },
-    metaRow: { flexDirection: 'row', gap: 8, marginTop: 2 },
-    meta: { fontSize: 12, color: t.textMuted },
-    focusText: { fontSize: 12, color: t.accent, fontWeight: '600' },
-    tick: { fontSize: 15, color: t.textMuted, marginLeft: 8 },
+    focus: { borderColor: t.accent },
+    sweep: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: t.accentSoft },
+    topLine: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 },
+    pill: { backgroundColor: t.accent, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 1 },
+    pillText: { color: t.onAccent, fontSize: 11, fontWeight: '700' },
+    range: { fontSize: 12, color: t.textMuted, fontVariant: ['tabular-nums'] },
+    name: { fontSize: 17, fontWeight: '700', color: t.text },
+    nameDone: { color: t.textMuted, textDecorationLine: 'line-through' },
+    check: {
+      borderWidth: 2,
+      borderColor: t.dotEmpty,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 10,
+    },
+    checkDone: { backgroundColor: t.accent, borderColor: t.accent },
+    checkMark: { color: t.onAccent, fontSize: 15, fontWeight: '800' },
     edit: { fontSize: 14, color: t.accent },
   });

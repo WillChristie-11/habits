@@ -19,13 +19,14 @@ interface Props {
 }
 
 type Entry =
-  | { kind: 'fixed'; minutes: number; rows: Row[] }
-  | { kind: 'flex'; key: string; minutes: number; timeLabel: string; title: string; subtitle: string; rows: Row[] };
+  | { kind: 'anchor' | 'timed'; minutes: number; rows: Row[] }
+  | { kind: 'flex'; key: string; minutes: number; label: string; rows: Row[] };
 
 /**
- * The day as a timeline. Anchors and timed habits sit at their times (stacked habits under
- * them); habits without a time stay flexible, grouped at the start of their window:
- * Morning at the morning reminder time, Evening when the evening nudge starts, This week last.
+ * The day on a vertical rail. Anchors are the key activities (large node, prominent card);
+ * timed habits are small nodes; habits without a time sit as compact rows under a quiet
+ * "anytime" label at the start of their window (Morning at the morning reminder time,
+ * Evening when the evening nudge starts, This week at the end).
  */
 export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress, onDelete }: Props) {
   const { idx, ctx, now, settings } = useStore();
@@ -39,102 +40,170 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
   const entries: Entry[] = [];
   for (const row of layout.timeline) {
     if (row.depth === 0 || entries.length === 0) {
-      entries.push({ kind: 'fixed', minutes: toMinutes(row.habit.scheduled_time ?? '00:00'), rows: [row] });
+      entries.push({
+        kind: row.habit.kind === 'anchor' ? 'anchor' : 'timed',
+        minutes: toMinutes(row.habit.scheduled_time ?? '00:00'),
+        rows: [row],
+      });
     } else entries[entries.length - 1].rows.push(row);
   }
-  const flex = (key: string, minutes: number, timeLabel: string, title: string, subtitle: string, rows: Row[]) =>
-    rows.length && entries.push({ kind: 'flex', key, minutes, timeLabel, title, subtitle, rows });
-  flex('morning', toMinutes(r.morningTime), formatTime(r.morningTime), 'Morning', `Flexible · any time before ${formatTime(MORNING_ENDS)}`, layout.sections.morning);
-  flex('evening', toMinutes(nudgeStart(r)), formatTime(nudgeStart(r)), 'Evening', `Flexible · before ${formatTime(r.eveningDeadline)}`, layout.sections.evening);
-  flex('week', 24 * 60, 'Week', 'This week', 'Flexible · any day', layout.sections.week);
-  entries.sort((a, b) => a.minutes - b.minutes || (a.kind === 'fixed' ? -1 : 1));
+  const flex = (key: string, minutes: number, label: string, rows: Row[]) =>
+    rows.length && entries.push({ kind: 'flex', key, minutes, label, rows });
+  flex('morning', toMinutes(r.morningTime), `Anytime this morning · before ${formatTime(MORNING_ENDS)}`, layout.sections.morning);
+  flex('evening', toMinutes(nudgeStart(r)), `Anytime this evening · before ${formatTime(r.eveningDeadline)}`, layout.sections.evening);
+  flex('week', 24 * 60, 'Any day this week', layout.sections.week);
+  entries.sort((a, b) => a.minutes - b.minutes || (a.kind === 'flex' ? 1 : b.kind === 'flex' ? -1 : 0));
 
   if (!entries.length) return null;
 
   let nowIndex = entries.findIndex((e) => e.minutes > nowMin);
   if (nowIndex === -1) nowIndex = entries.length;
-  const nowLine = (
-    <View key="now" style={s.nowRow} accessibilityLabel={`Now, ${formatTime(fromMinutes(nowMin))}`}>
-      <Text style={s.nowTime}>{formatTime(fromMinutes(nowMin))}</Text>
-      <View style={s.nowDot} />
-      <View style={s.nowLine} />
-    </View>
-  );
 
-  const renderRow = (row: Row) => {
-    const f = focus?.id === row.habit.id ? focus.label : null;
-    return row.habit.kind === 'anchor' ? (
-      <AnchorRow
-        key={row.habit.id}
-        anchor={row.habit}
-        state={stateOf(row.habit)}
-        editMode={editMode}
-        focus={f}
-        onToggle={() => onToggle(row.habit, stateOf(row.habit))}
-        onOpen={() => onOpen(row.habit)}
-        onDelete={() => onDelete(row.habit)}
-      />
-    ) : (
-      <HabitRow
-        key={row.habit.id}
-        row={row}
-        editMode={editMode}
-        focus={f}
-        onToggle={(st) => onToggle(row.habit, st)}
-        onOpen={() => onOpen(row.habit)}
-        onLongPress={() => onLongPress(row.habit)}
-        onDelete={() => onDelete(row.habit)}
-      />
-    );
-  };
+  const habitRow = (row: Row) => (
+    <HabitRow
+      key={row.habit.id}
+      row={{ ...row, depth: Math.max(0, row.depth - (row.anchor?.kind === 'anchor' ? 1 : 0)) }}
+      compact
+      editMode={editMode}
+      focus={focus?.id === row.habit.id ? focus.label : null}
+      onToggle={(st) => onToggle(row.habit, st)}
+      onOpen={() => onOpen(row.habit)}
+      onLongPress={() => onLongPress(row.habit)}
+      onDelete={() => onDelete(row.habit)}
+    />
+  );
 
   const out: React.ReactNode[] = [];
   entries.forEach((e, i) => {
-    if (i === nowIndex && !editMode) out.push(nowLine);
-    if (e.kind === 'fixed') {
+    if (i === nowIndex && !editMode) {
       out.push(
-        <View key={`fixed-${e.rows[0].habit.id}`} style={s.block}>
-          <Text style={s.time}>{formatTime(e.rows[0].habit.scheduled_time)}</Text>
-          <View style={{ flex: 1 }}>{e.rows.map(renderRow)}</View>
+        <View key="now" style={s.entry} accessibilityLabel={`Now, ${formatTime(fromMinutes(nowMin))}`}>
+          <Text style={[s.time, s.nowTime]} numberOfLines={1}>{formatTime(fromMinutes(nowMin))}</Text>
+          <View style={s.rail}>
+            <View style={s.line} />
+            <View style={[s.node, s.nowNode]} />
+          </View>
+          <View style={s.nowLineWrap}>
+            <View style={s.nowLine} />
+          </View>
         </View>,
       );
-    } else {
+    }
+    const first = e.rows[0].habit;
+    const isFocus = focus?.id === first.id;
+    const passed = e.kind !== 'flex' && !isFocus && e.minutes < nowMin && e.rows.every((x) => stateOf(x.habit) !== 'pending');
+
+    if (e.kind === 'anchor') {
+      const done = ['done', 'skipped'].includes(stateOf(first));
       out.push(
-        <View key={`flex-${e.key}`} style={s.block}>
-          <Text style={s.time}>{e.timeLabel}</Text>
-          <View style={[s.flexBox, { flex: 1 }]}>
-            <Text style={s.flexTitle}>{e.title}</Text>
-            <Text style={s.flexSub}>{e.subtitle}</Text>
-            <View style={{ marginTop: 8 }}>{e.rows.map(renderRow)}</View>
+        <View key={`a-${first.id}`} style={[s.entry, passed && s.passed]}>
+          <Text style={[s.time, s.anchorTime, isFocus && s.focusTime]}>{formatTime(first.scheduled_time)}</Text>
+          <View style={s.rail}>
+            <View style={s.line} />
+            <View style={[s.node, s.anchorNode, (isFocus || done) && s.anchorNodeOn]} />
+          </View>
+          <View style={s.content}>
+            <AnchorRow
+              anchor={first}
+              state={stateOf(first)}
+              editMode={editMode}
+              focus={isFocus ? focus!.label : null}
+              onToggle={() => onToggle(first, stateOf(first))}
+              onOpen={() => onOpen(first)}
+              onDelete={() => onDelete(first)}
+            />
+            {e.rows.slice(1).map(habitRow)}
+          </View>
+        </View>,
+      );
+    } else if (e.kind === 'timed') {
+      out.push(
+        <View key={`t-${first.id}`} style={[s.entry, passed && s.passed]}>
+          <Text style={[s.time, isFocus && s.focusTime]}>{formatTime(first.scheduled_time)}</Text>
+          <View style={s.rail}>
+            <View style={s.line} />
+            <View style={[s.node, s.smallNode, isFocus && s.anchorNodeOn]} />
+          </View>
+          <View style={s.content}>{e.rows.map(habitRow)}</View>
+        </View>,
+      );
+    } else if (e.kind === 'flex') {
+      out.push(
+        <View key={`f-${e.key}`} style={s.entry}>
+          <Text style={s.time}>{e.key === 'week' ? '' : formatTime(fromMinutes(e.minutes))}</Text>
+          <View style={s.rail}>
+            <View style={s.line} />
+            <View style={[s.node, s.flexNode]} />
+          </View>
+          <View style={s.content}>
+            <Text style={s.flexLabel}>{e.label}</Text>
+            {e.rows.map(habitRow)}
           </View>
         </View>,
       );
     }
   });
-  if (nowIndex === entries.length && !editMode) out.push(nowLine);
+  if (nowIndex === entries.length && !editMode) {
+    out.push(
+      <View key="now" style={s.entry}>
+        <Text style={[s.time, s.nowTime]} numberOfLines={1}>{formatTime(fromMinutes(nowMin))}</Text>
+        <View style={s.rail}>
+          <View style={[s.node, s.nowNode]} />
+        </View>
+        <View style={s.nowLineWrap}>
+          <View style={s.nowLine} />
+        </View>
+      </View>,
+    );
+  }
 
   return <View>{out}</View>;
 }
 
-const TIME_W = 64;
+const TIME_W = 66;
+const RAIL_W = 22;
+const NODE_TOP = 22;
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
-    block: { flexDirection: 'row', marginBottom: 2 },
-    time: { width: TIME_W, paddingTop: 15, fontSize: 12, color: t.textMuted, fontVariant: ['tabular-nums'] },
-    flexBox: {
-      borderRadius: 14,
-      borderWidth: 1,
-      borderStyle: 'dashed',
-      borderColor: t.dotEmpty,
-      padding: 8,
-      paddingTop: 10,
-      marginBottom: 6,
+    entry: { flexDirection: 'row' },
+    passed: { opacity: 0.6 },
+    time: {
+      width: TIME_W,
+      paddingTop: NODE_TOP - 7,
+      fontSize: 12,
+      color: t.textMuted,
+      textAlign: 'right',
+      paddingRight: 6,
+      fontVariant: ['tabular-nums'],
     },
-    flexTitle: { fontSize: 13, fontWeight: '700', color: t.text, marginLeft: 4 },
-    flexSub: { fontSize: 12, color: t.textMuted, marginLeft: 4, marginTop: 1 },
-    nowRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
-    nowTime: { width: TIME_W - 6, fontSize: 11, fontWeight: '700', color: t.accent, fontVariant: ['tabular-nums'] },
-    nowDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: t.accent },
-    nowLine: { flex: 1, height: 1.5, backgroundColor: t.accent, opacity: 0.6 },
+    anchorTime: { fontWeight: '700', color: t.text },
+    focusTime: { color: t.accent, fontWeight: '700' },
+    nowTime: { color: t.accent, fontWeight: '700', paddingTop: 2, fontSize: 11 },
+    rail: { width: RAIL_W, alignItems: 'center' },
+    line: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: t.border },
+    node: { position: 'absolute', borderRadius: 10 },
+    anchorNode: {
+      top: NODE_TOP - 7,
+      width: 14,
+      height: 14,
+      borderWidth: 2.5,
+      borderColor: t.accent,
+      backgroundColor: t.background,
+    },
+    anchorNodeOn: { backgroundColor: t.accent, borderColor: t.accent },
+    smallNode: {
+      top: NODE_TOP - 4,
+      width: 8,
+      height: 8,
+      borderWidth: 2,
+      borderColor: t.dotEmpty,
+      backgroundColor: t.background,
+    },
+    flexNode: { top: 6, width: 6, height: 6, backgroundColor: t.dotEmpty },
+    nowNode: { top: 4, width: 10, height: 10, backgroundColor: t.accent },
+    content: { flex: 1, paddingLeft: 8, paddingBottom: 10 },
+    flexLabel: { fontSize: 12, color: t.textMuted, fontWeight: '600', marginBottom: 6, marginTop: 1 },
+    nowLineWrap: { flex: 1, justifyContent: 'flex-start', paddingTop: 8, paddingLeft: 4, height: 22 },
+    nowLine: { height: 2, backgroundColor: t.accent, borderRadius: 1, opacity: 0.7 },
   });
