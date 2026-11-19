@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, Meta, RecordStatus, Section } from '../types';
+import type { DayRecord, EntryType, Frequency, Habit, HabitInput, ItemKind, JournalEntry, Meta, RecordStatus, Section } from '../types';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -8,7 +8,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -83,6 +83,21 @@ async function open() {
         ALTER TABLE habits ADD COLUMN obstacle TEXT;
       `);
     });
+  }
+  if (version < 6) {
+    // v6: journal entries (intentions, reflections, weekly reviews, notes to future me).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL CHECK (type IN ('intention','reflection','weekly','note')),
+        date TEXT NOT NULL,
+        habit_id INTEGER REFERENCES habits(id) ON DELETE SET NULL,
+        data TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS entries_by_date ON entries (date);
+    `);
   }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
@@ -338,4 +353,58 @@ export async function saveSetting(key: string, value: string): Promise<void> {
     key,
     value,
   );
+}
+
+// --- Journal ------------------------------------------------------------------------------
+
+interface EntryRow extends Omit<JournalEntry, 'data'> {
+  data: string;
+}
+
+export async function loadEntries(): Promise<JournalEntry[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<EntryRow>('SELECT * FROM entries ORDER BY date DESC, id DESC');
+  return rows.map((r) => {
+    let data: Record<string, string> = {};
+    try {
+      data = JSON.parse(r.data) ?? {};
+    } catch {}
+    return { ...r, data };
+  });
+}
+
+/**
+ * One entry per (type, date, habit) for intentions, reflections and weekly reviews: writing again
+ * updates it. Notes always add a new entry.
+ */
+export async function saveEntry(type: EntryType, date: string, data: Record<string, string>, habitId: number | null = null) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  if (type !== 'note') {
+    const existing = await db.getFirstAsync<{ id: number }>(
+      'SELECT id FROM entries WHERE type = ? AND date = ? AND habit_id IS ?',
+      type,
+      date,
+      habitId,
+    );
+    if (existing) {
+      await db.runAsync('UPDATE entries SET data = ?, updated_at = ? WHERE id = ?', JSON.stringify(data), now, existing.id);
+      return existing.id;
+    }
+  }
+  const res = await db.runAsync(
+    'INSERT INTO entries (type, date, habit_id, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    type,
+    date,
+    habitId,
+    JSON.stringify(data),
+    now,
+    now,
+  );
+  return res.lastInsertRowId;
+}
+
+export async function deleteEntry(id: number) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM entries WHERE id = ?', id);
 }

@@ -101,6 +101,22 @@ export type HabitInput = Omit<Habit, 'id' | 'order' | 'created_at' | 'paused_fro
 export const isAnchor = (h: Habit) => h.kind === 'anchor';
 export const isHabit = (h: Habit) => h.kind === 'habit';
 
+/** Everything written in the Journal. One table so it can be shown as one timeline. */
+export type EntryType = 'intention' | 'reflection' | 'weekly' | 'note';
+
+export interface JournalEntry {
+  id: number;
+  type: EntryType;
+  /** Day it belongs to (weekly: the Sunday that closes the week). */
+  date: string;
+  /** Set for notes to future me about one habit. */
+  habit_id: number | null;
+  /** intention: { text } · reflection: { wentWell, inTheWay } · weekly: { liked, didntWork, changes } · note: { text } */
+  data: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Snooze {
   habitId: number;
   date: string; // the day the item belongs to

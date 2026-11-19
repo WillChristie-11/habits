@@ -12,6 +12,7 @@ import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { NextAnchorLine } from '../components/NextAnchorLine';
+import { IntentionLine, IntentionPrompt, useIntention } from '../components/Intention';
 import { useThemedStyles, type Theme } from '../theme';
 
 const SECTIONS: Section[] = ['morning', 'evening', 'week'];
@@ -20,7 +21,7 @@ const SECTIONS: Section[] = ['morning', 'evening', 'week'];
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { habits, idx, ctx } = useStore();
+  const { habits, idx, ctx, settings, ready } = useStore();
   const [picked, setPicked] = useState<string | null>(null);
   // Follow "today" across midnight unless a past day is being viewed.
   const date = picked && picked < ctx.today ? picked : ctx.today;
@@ -28,6 +29,13 @@ export function TodayScreen() {
   const [editMode, setEditMode] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const actions = useHabitActions(date);
+
+  // Morning intention: asked on the first open of each day (skippable), then shown at the top.
+  const intention = useIntention(date);
+  const todaysIntention = useIntention(ctx.today);
+  const [editingIntention, setEditingIntention] = useState(false);
+  const askToday = ready && habits.length > 0 && settings.intentionAskedOn !== ctx.today && !todaysIntention;
+  const intentionOpen = editingIntention || askToday;
 
   const tracked = useMemo(() => habits.filter((h) => h.kind === 'habit'), [habits]);
   const ring = dayCompletion(habits, idx, ctx, date);
@@ -64,6 +72,7 @@ export function TodayScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
       >
+        <IntentionLine date={date} onEdit={() => setEditingIntention(true)} />
         {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} />}
         {isToday && <Banners onStart={actions.startTimer} />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
@@ -101,6 +110,15 @@ export function TodayScreen() {
       </ScrollView>
 
       {actions.overlays}
+      {intentionOpen && (
+        <IntentionPrompt
+          key={`${date}-${intention ?? ''}`}
+          visible
+          date={editingIntention ? date : ctx.today}
+          initial={editingIntention ? (intention ?? '') : ''}
+          onClose={() => setEditingIntention(false)}
+        />
+      )}
     </View>
   );
 }

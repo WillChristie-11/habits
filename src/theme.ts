@@ -22,6 +22,8 @@ export interface Theme {
   /** pressed / secondary control fill */
   muted: string;
   shadow: string;
+  /** dimmed backdrop behind dialogs */
+  scrim: string;
 }
 
 /** Status colours: identical in every theme, and never reused for anything else. */
@@ -52,6 +54,7 @@ export const themes = {
     accentSoft: 'rgba(47,107,79,0.10)',
     muted: '#ECEBE5',
     shadow: '#000000',
+    scrim: 'rgba(0,0,0,0.30)',
   },
   midnight: {
     id: 'midnight',
@@ -68,6 +71,7 @@ export const themes = {
     accentSoft: 'rgba(122,162,247,0.14)',
     muted: '#262B36',
     shadow: '#000000',
+    scrim: 'rgba(0,0,0,0.55)',
   },
 } satisfies Record<string, Omit<Theme, 'id'> & { id: string }>;
 
