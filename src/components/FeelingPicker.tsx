@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { FEELINGS } from '../types';
 import { useThemedStyles, type Theme } from '../theme';
 
-const AUTO_DISMISS_MS = 4000;
+const AUTO_DISMISS_MS = 7000;
 
 interface Props {
   habitName: string;

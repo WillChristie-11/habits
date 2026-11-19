@@ -7,11 +7,14 @@ import { TimeField, formatTime } from '../components/TimeField';
 import { onTimeline, toMinutes } from '../lib/schedule';
 import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
+import { MessageList } from '../components/MessageList';
 import { useThemedStyles, type Theme } from '../theme';
 
 interface Props {
   visible: boolean;
   habit: Habit | null; // null = new
+  /** For new items: start as a habit or an anchor. */
+  defaultKind?: ItemKind;
   onClose(): void;
 }
 
@@ -30,25 +33,29 @@ type When = 'morning' | 'evening' | 'time';
 
 const sectionForTime = (hm: string): Section => (toMinutes(hm) < 12 * 60 ? 'morning' : 'evening');
 
-export function HabitForm({ visible, habit, onClose }: Props) {
+export function HabitForm({ visible, habit, defaultKind = 'habit', onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.screen}>{visible && <FormBody habit={habit} onClose={onClose} />}</View>
+      <View style={s.screen}>{visible && <FormBody habit={habit} defaultKind={defaultKind} onClose={onClose} />}</View>
     </Modal>
   );
 }
 
-function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) {
+function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaultKind: ItemKind; onClose(): void }) {
   const s = useThemedStyles(makeStyles);
   const { habits, addHabit, editHabit } = useStore();
 
-  const [kind, setKind] = useState<ItemKind>(habit?.kind ?? 'habit');
+  const [kind, setKind] = useState<ItemKind>(habit?.kind ?? defaultKind);
   const [name, setName] = useState(habit?.name ?? '');
   const [ftype, setFtype] = useState<FrequencyType>(habit?.frequency.type ?? 'daily');
   const [count, setCount] = useState(habit?.frequency.count ?? 2);
   const [days, setDays] = useState<number[]>(
-    habit?.frequency.type === 'specific_days' ? (habit.frequency.days ?? []) : habit?.kind === 'anchor' ? ALL_DAYS : [1, 3, 5],
+    habit?.frequency.type === 'specific_days'
+      ? (habit.frequency.days ?? [])
+      : (habit?.kind ?? defaultKind) === 'anchor'
+        ? ALL_DAYS
+        : [1, 3, 5],
   );
   const [n, setN] = useState(habit?.frequency.n ?? 2);
   const [when, setWhen] = useState<When>(
@@ -59,6 +66,7 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
   const [endTime, setEndTime] = useState(habit?.end_time ?? '09:00');
   const [why, setWhy] = useState(habit?.why ?? '');
   const [minimum, setMinimum] = useState(habit?.minimum_version ?? '');
+  const [messages, setMessages] = useState<string[]>(habit?.messages ?? []);
   const [stackAfter, setStackAfter] = useState<number | null>(habit?.stack_after ?? null);
   const [reminder, setReminder] = useState(habit?.reminder ?? false);
   const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);
@@ -130,6 +138,7 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
       frequency,
       why: isAnchor ? null : why.trim() || null,
       minimum_version: isAnchor ? null : minimum.trim() || null,
+      messages: isAnchor ? [] : messages,
       stack_after: validAnchor,
       scheduled_time: scheduled ? time : null,
       end_time: isAnchor && hasEnd ? endTime : null,
@@ -325,6 +334,12 @@ function FormBody({ habit, onClose }: { habit: Habit | null; onClose(): void }) 
 
             <Label hint="optional">Minimum version</Label>
             <Input value={minimum} onChangeText={setMinimum} placeholder="The smallest version that still counts" />
+
+            <Label hint="optional">More motivation</Label>
+            <MessageList value={messages} onChange={setMessages} />
+            <View style={{ marginTop: 8 }}>
+              <Help>Reminders rotate through your why and these, one a day.</Help>
+            </View>
           </>
         )}
       </ScrollView>

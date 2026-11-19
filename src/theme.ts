@@ -75,18 +75,16 @@ export type ThemeId = keyof typeof themes;
 
 export type AppearanceMode = 'system' | 'light' | 'dark';
 
+/** Forest is the light theme, Midnight the dark one; the only choice is which applies. */
 export interface Appearance {
   mode: AppearanceMode;
-  light: ThemeId;
-  dark: ThemeId;
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { mode: 'system', light: 'forest', dark: 'midnight' };
+export const DEFAULT_APPEARANCE: Appearance = { mode: 'system' };
 
 export function resolveTheme(a: Appearance, systemScheme: 'light' | 'dark' | null | undefined): Theme {
   const wantDark = a.mode === 'dark' || (a.mode === 'system' && systemScheme === 'dark');
-  const id = wantDark ? a.dark : a.light;
-  return (themes[id] ?? themes.forest) as Theme;
+  return (wantDark ? themes.midnight : themes.forest) as Theme;
 }
 
 /** Provided by the store, which owns the saved appearance setting. */

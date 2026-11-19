@@ -3,7 +3,7 @@ import { Animated, PanResponder, StyleSheet, Text, View, type PanResponderInstan
 import * as Haptics from 'expo-haptics';
 import type { DayState, Habit, Section } from '../types';
 import { SECTION_LABELS } from '../types';
-import { visibleToday, type Row } from '../lib/schedule';
+import { visibleOn, type Row } from '../lib/schedule';
 import { useStore } from '../store';
 import { HabitRow } from './HabitRow';
 import { useThemedStyles, type Theme } from '../theme';
@@ -19,6 +19,8 @@ interface Props {
   onDelete(h: Habit): void;
   /** Rendered between the header and rows (e.g. section banners). */
   header?: React.ReactNode;
+  /** Day being shown (defaults to today). */
+  date?: string;
 }
 
 /** A unit is a top-level habit plus everything stacked under it; they drag together. */
@@ -31,8 +33,20 @@ function toUnits(rows: Row[]): Row[][] {
   return units;
 }
 
-export function SectionBlock({ section, rows, editMode, setScrollEnabled, onToggle, onOpen, onLongPress, onDelete, header }: Props) {
+export function SectionBlock({
+  section,
+  rows,
+  editMode,
+  setScrollEnabled,
+  onToggle,
+  onOpen,
+  onLongPress,
+  onDelete,
+  header,
+  date,
+}: Props) {
   const { idx, ctx, reorder } = useStore();
+  const day = date ?? ctx.today;
   const styles = useThemedStyles(makeStyles);
   const units = useMemo(() => toUnits(rows), [rows]);
 
@@ -123,7 +137,9 @@ export function SectionBlock({ section, rows, editMode, setScrollEnabled, onTogg
                 key={row.habit.id}
                 row={row}
                 editMode={editMode}
-                dimmed={editMode && !visibleToday(row.habit, idx, ctx)}
+                date={day}
+                showTime
+                dimmed={editMode && !visibleOn(row.habit, idx, ctx, day)}
                 dragHandlers={row.depth === 0 ? responders[i]?.panHandlers : undefined}
                 onToggle={(s) => onToggle(row.habit, s)}
                 onOpen={() => onOpen(row.habit)}

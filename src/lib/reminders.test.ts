@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
 import { indexRecords } from './schedule';
-import { banners, behindPace, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
+import { banners, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
 
 const TODAY = '2026-11-19'; // Thursday
 const ctx = { today: TODAY };
@@ -20,6 +20,7 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     section: 'morning',
     why: null,
     minimum_version: null,
+    messages: [],
     frequency,
     order: 0,
     stack_after: null,
@@ -137,4 +138,18 @@ test('section passed: timed after its time, morning after noon, evening at nudge
   assert.equal(sectionPassed(m, R, at('12:00'), false), true);
   assert.equal(sectionPassed(e, R, at('19:59'), false), false);
   assert.equal(sectionPassed(e, R, at('20:00'), false), true);
+});
+
+test('motivational messages rotate daily through why, own messages, then the general list', () => {
+  const h = habit(daily, { why: 'calm', messages: ['you never regret it'] });
+  const general = ['small steps'];
+  const seen = new Set(['2026-11-19', '2026-11-20', '2026-11-21'].map((d) => pickMessage(h, d, general)));
+  assert.deepEqual([...seen].sort(), ['calm', 'small steps', 'you never regret it']);
+  assert.equal(pickMessage(habit(daily), TODAY, []), null);
+  assert.equal(pickMessage(null, TODAY, general), 'small steps');
+  // shows up in a timed habit's reminder and the evening nudge
+  const t = habit(daily, { name: 'Read', scheduled_time: '21:00', reminder: true, messages: ['one page counts'] });
+  const plan = planNotifications([t], indexRecords([]), ctx, { ...R, morningEnabled: false }, at('06:00'));
+  assert.match(plan.find((p) => p.id.startsWith('item-'))!.body, /one page counts$/);
+  assert.match(plan.find((p) => p.id.startsWith('evening-'))!.body, /\none page counts$/);
 });

@@ -30,6 +30,8 @@ export interface Habit {
   section: Section;
   why: string | null;
   minimum_version: string | null;
+  /** Extra motivational lines; rotate in notifications alongside `why`. */
+  messages: string[];
   /** Anchors use daily or specific_days only. */
   frequency: Frequency;
   order: number;
@@ -96,6 +98,8 @@ export interface ReminderSettings {
   /** date key the morning banner was dismissed on */
   morningDismissedOn: string | null;
   snoozes: Snooze[];
+  /** General motivational lines, used for any habit. */
+  messages: string[];
 }
 
 export const DEFAULT_REMINDERS: ReminderSettings = {
@@ -105,4 +109,5 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   eveningDeadline: '22:00',
   morningDismissedOn: null,
   snoozes: [],
+  messages: [],
 };

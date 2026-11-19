@@ -8,7 +8,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -58,6 +58,10 @@ async function open() {
       `);
     });
   }
+  if (version < 3) {
+    // v3: per-habit motivational messages (JSON array of strings).
+    await db.execAsync(`ALTER TABLE habits ADD COLUMN messages TEXT;`);
+  }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }
@@ -70,6 +74,7 @@ interface HabitRow {
   reminder: number;
   remind_before: number;
   meta: string | null;
+  messages: string | null;
   name: string;
   section: Section;
   why: string | null;
@@ -92,6 +97,16 @@ function parseMeta(raw: string | null): Meta | null {
   }
 }
 
+function parseMessages(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
 function rowToHabit(r: HabitRow): Habit {
   let frequency: Frequency;
   try {
@@ -106,6 +121,7 @@ function rowToHabit(r: HabitRow): Habit {
     section: r.section,
     why: r.why,
     minimum_version: r.minimum_version,
+    messages: parseMessages(r.messages),
     frequency,
     order: r.sort_order,
     stack_after: r.stack_after,
@@ -142,8 +158,8 @@ export async function createHabit(input: HabitInput): Promise<number> {
   );
   const res = await db.runAsync(
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
-       scheduled_time, end_time, reminder, remind_before, meta, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       scheduled_time, end_time, reminder, remind_before, meta, messages, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
     input.section,
@@ -157,6 +173,7 @@ export async function createHabit(input: HabitInput): Promise<number> {
     input.reminder ? 1 : 0,
     input.remind_before,
     input.meta ? JSON.stringify(input.meta) : null,
+    JSON.stringify(input.messages),
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -178,6 +195,7 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.reminder ? 1 : 0,
     input.remind_before,
     input.meta ? JSON.stringify(input.meta) : null,
+    JSON.stringify(input.messages),
   ];
   if (current && current.section !== input.section) {
     // Moving sections: append to the end of the new one, and detach anything stacked on it.
@@ -193,7 +211,7 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
   params.push(id);
   await db.runAsync(
     `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
-       scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?${orderClause}
+       scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?${orderClause}
      WHERE id = ?`,
     ...params,
   );

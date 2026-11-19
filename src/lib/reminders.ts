@@ -1,6 +1,6 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
 import type { Habit, ReminderSettings } from '../types';
-import { addDays, atTime, formatDuration, formatTime, weekDays } from './dates';
+import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from './dates';
 import {
   missedTwiceRisk,
   onTimeline,
@@ -131,15 +131,31 @@ export interface PlannedNotification {
   data: { type: 'item' | 'morning' | 'evening'; habitId?: number; date: string };
 }
 
+const withLine = (text: string, line: string | null) => (line ? `${text}\n${line}` : text);
+
 function list(names: string[], max = 3): string {
   if (names.length <= max) return names.join(', ');
   return `${names.slice(0, max).join(', ')} +${names.length - max} more`;
 }
 
-function itemBody(h: Habit, minutesBefore: number): string {
+/**
+ * One motivational line for a habit on a date: its why, its own messages, then the general
+ * list, rotating one step per day (offset by habit so two reminders on one day differ).
+ */
+export function pickMessage(h: Habit | null, date: string, general: string[]): string | null {
+  const pool = [...(h?.why ? [h.why] : []), ...(h?.messages ?? []), ...general]
+    .map((m) => m.trim())
+    .filter(Boolean);
+  if (!pool.length) return null;
+  const day = diffDays('2026-01-01', date);
+  const i = (((day + (h?.id ?? 0)) % pool.length) + pool.length) % pool.length;
+  return pool.at(i) ?? null;
+}
+
+function itemBody(h: Habit, minutesBefore: number, date: string, general: string[]): string {
   const when = minutesBefore > 0 ? `In ${formatDuration(minutesBefore)}` : formatTime(h.scheduled_time);
   if (h.kind === 'anchor') return h.end_time ? `${when} · until ${formatTime(h.end_time)}` : when;
-  const extra = h.why ?? (h.minimum_version ? `Minimum: ${h.minimum_version}` : null);
+  const extra = pickMessage(h, date, general) ?? (h.minimum_version ? `Minimum: ${h.minimum_version}` : null);
   return extra ? `${when} · ${extra}` : when;
 }
 
@@ -168,7 +184,7 @@ export function planNotifications(
         id: `item-${h.id}-${date}`,
         at,
         title: h.name,
-        body: itemBody(h, h.remind_before),
+        body: itemBody(h, h.remind_before, date, r.messages),
         category: 'item',
         data: { type: 'item', habitId: h.id, date },
       });
@@ -183,7 +199,7 @@ export function planNotifications(
           id: `morning-${date}`,
           at,
           title: 'Good morning',
-          body: `${m.length} to do: ${list(m.map((h) => h.name))}`,
+          body: withLine(`${m.length} to do: ${list(m.map((h) => h.name))}`, pickMessage(null, date, r.messages)),
           category: null,
           data: { type: 'morning', date },
         });
@@ -197,11 +213,8 @@ export function planNotifications(
       if (future(at) && left.length) {
         const names = left.map((x) => (x.flagged ? `${x.habit.name} ⚑` : x.habit.name));
         const first = left[0].habit;
-        const motivation = first.minimum_version
-          ? ` Minimum for ${first.name}: ${first.minimum_version}.`
-          : first.why
-            ? ` ${first.name}: ${first.why}`
-            : '';
+        const minimum = first.minimum_version ? ` Minimum for ${first.name}: ${first.minimum_version}.` : '';
+        const motivation = minimum + (pickMessage(first, date, r.messages) ? `\n${pickMessage(first, date, r.messages)}` : '');
         out.push({
           id: `evening-${date}`,
           at,
@@ -225,7 +238,7 @@ export function planNotifications(
       id: `snooze-${h.id}-${s.date}`,
       at,
       title: h.name,
-      body: h.kind === 'habit' && h.why ? `Reminder · ${h.why}` : 'Reminder',
+      body: (h.kind === 'habit' && pickMessage(h, s.date, r.messages)) || 'Reminder',
       category: 'item',
       data: { type: 'item', habitId: h.id, date: s.date },
     });

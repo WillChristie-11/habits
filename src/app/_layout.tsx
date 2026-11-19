@@ -27,7 +27,7 @@ function ThemedStack() {
       <StatusBar style={t.dark ? 'light' : 'dark'} />
       <NotificationBridge />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background } }}>
-        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
       </Stack>
     </>

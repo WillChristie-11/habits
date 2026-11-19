@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Habit } from '../types';
 import { Button } from './ui';
 import { useThemedStyles, type Theme } from '../theme';
+import { useStore } from '../store';
+import { pickMessage } from '../lib/reminders';
 
 interface Props {
   habit: Habit | null;
@@ -17,6 +19,9 @@ interface Props {
 export function MotivationSheet({ habit, onDone, onSkip, onDetails, onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  const { ctx, settings } = useStore();
+  // A rotating line besides the why (which has its own block).
+  const extra = habit ? pickMessage({ ...habit, why: null }, ctx.today, settings.reminders.messages) : null;
   return (
     <Modal visible={!!habit} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.scrim} onPress={onClose} accessibilityLabel="Close" />
@@ -28,6 +33,12 @@ export function MotivationSheet({ habit, onDone, onSkip, onDetails, onClose }: P
             <View style={s.block}>
               <Text style={s.label}>Why</Text>
               <Text style={s.text}>{habit.why}</Text>
+            </View>
+          )}
+          {extra && (
+            <View style={s.block}>
+              <Text style={s.label}>For today</Text>
+              <Text style={s.text}>{extra}</Text>
             </View>
           )}
           {habit.minimum_version && (

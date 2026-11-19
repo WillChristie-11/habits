@@ -25,7 +25,7 @@ npx expo lint
 
 ## Layout
 
-- `src/app/` – Expo Router routes (`index` = Today, `settings` = modal)
+- `src/app/` – Expo Router routes: `(tabs)/index` = Today, `(tabs)/schedule` = Schedule, `settings` = modal
 - `src/types.ts` – habit / anchor + record model (`meta` JSON fields reserved for future features)
 - `src/db/db.ts` – SQLite schema, versioned with `PRAGMA user_version` (v2 adds anchors and times)
 - `src/lib/schedule.ts` – pure logic: day states, weekly %, due/overdue, "never miss twice",

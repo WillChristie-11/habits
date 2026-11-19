@@ -16,6 +16,7 @@ import {
   layoutDay,
   timelineFocus,
   stateOn,
+  periodSummary,
 } from './schedule';
 import { addDays, diffDays, last7, weekDays, weekStart } from './dates';
 
@@ -31,6 +32,7 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     section: 'morning',
     why: null,
     minimum_version: null,
+    messages: [],
     frequency,
     order: 0,
     stack_after: null,
@@ -221,4 +223,20 @@ test('anchors never count toward %, the ring, or never-miss-twice', () => {
   assert.deepEqual(todayCompletion([a, h], idx, ctx), { done: 1, total: 1, pct: 1 });
   assert.equal(progress(a, idx, weekDays(TODAY), ctx).pct, null);
   assert.equal(missedTwiceRisk(a, indexRecords([]), ctx), false);
+});
+
+test('week summary sums habits (weekly_count capped at target) and ignores anchors', () => {
+  const a = habit({ type: 'daily' }); // Mon done, Tue–Wed missed, today pending → 1/3
+  const w = habit({ type: 'weekly_count', count: 2 }); // 3 sessions → counts 2/2
+  const anchor = habit({ type: 'daily' }, { kind: 'anchor', scheduled_time: '07:00' });
+  const later = habit({ type: 'daily' }, { created_at: '2026-12-01T08:00:00' });
+  const idx = indexRecords([rec(a, '2026-11-16'), rec(w, '2026-11-16'), rec(w, '2026-11-17'), rec(w, '2026-11-18'), rec(anchor, '2026-11-16')]);
+  assert.deepEqual(periodSummary([a, w, anchor, later], idx, weekDays(TODAY), ctx), { done: 3, expected: 5, pct: 0.6 });
+});
+
+test('plain list layout (timeline off) keeps timed habits in their section', () => {
+  const t = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15', section: 'morning' });
+  const l = layoutDay([t], () => true, { timeline: false });
+  assert.deepEqual(l.timeline, []);
+  assert.deepEqual(l.sections.morning.map((r) => r.habit.name), ['pills']);
 });

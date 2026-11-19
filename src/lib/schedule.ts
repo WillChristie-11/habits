@@ -206,6 +206,8 @@ export interface Row {
   anchor: Habit | null;
 }
 
+export const onTimeline = placedOnTimeline;
+
 export interface DayLayout {
   /** anchors + scheduled habits by time, each followed by what's stacked on it */
   timeline: Row[];
@@ -213,7 +215,7 @@ export interface DayLayout {
 }
 
 /** Anchors, and daily / specific-days habits with a scheduled time, live on the timeline. */
-export function onTimeline(h: Habit): boolean {
+export function placedOnTimeline(h: Habit): boolean {
   if (h.kind === 'anchor') return true;
   return h.scheduled_time != null && (h.frequency.type === 'daily' || h.frequency.type === 'specific_days');
 }
@@ -225,7 +227,14 @@ const byOrder = (a: Habit, b: Habit) => a.order - b.order || a.id - b.id;
  * directly under it (wherever that is); otherwise the habit's section. Stacking cycles fall back
  * to flat section rows.
  */
-export function layoutDay(habits: Habit[], visible: (h: Habit) => boolean): DayLayout {
+export function layoutDay(
+  habits: Habit[],
+  visible: (h: Habit) => boolean,
+  opts: { timeline?: boolean } = {},
+): DayLayout {
+  // timeline:false = a plain habit list (Today tab): timed habits stay in their section.
+  const useTimeline = opts.timeline ?? true;
+  const onTimeline = (h: Habit) => useTimeline && placedOnTimeline(h);
   const list = habits.filter(visible).sort(byOrder);
   const byId = new Map(list.map((h) => [h.id, h]));
   const parentOf = (h: Habit): Habit | null => {
@@ -318,4 +327,27 @@ export function frequencyText(h: Habit): string {
     case 'every_n_days':
       return (f.n ?? 1) === 1 ? 'Every day' : `Every ${f.n} days`;
   }
+}
+
+/**
+ * Overall completion for a set of days (a week): every habit's done ÷ expected, summed.
+ * weekly_count habits contribute min(done, target) of target. Habits created after the
+ * last day are left out; anchors never count.
+ */
+export function periodSummary(habits: Habit[], idx: RecordIndex, days: string[], ctx: Ctx) {
+  let done = 0;
+  let expected = 0;
+  const last = days[days.length - 1];
+  for (const h of habits) {
+    if (h.kind !== 'habit' || habitStart(h, idx.get(h.id)) > last) continue;
+    const p = progress(h, idx, days, ctx);
+    if (p.target != null) {
+      done += Math.min(p.done, p.target);
+      expected += p.target;
+    } else {
+      done += p.done;
+      expected += p.expected;
+    }
+  }
+  return { done, expected, pct: expected > 0 ? done / expected : null };
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View, type GestureResponderHandlers } from 'react-native';
 import type { DayState } from '../types';
+import { FEELINGS } from '../types';
 import { useStore } from '../store';
 import {
   dueLabel,
@@ -12,7 +13,7 @@ import {
   timeline,
   type Row,
 } from '../lib/schedule';
-import { last7, weekDays } from '../lib/dates';
+import { formatTime, last7, weekDays } from '../lib/dates';
 import { DotRow } from './Dots';
 import { status, useThemedStyles, type Theme } from '../theme';
 
@@ -27,22 +28,42 @@ export interface RowProps {
   dimmed?: boolean;
   /** Timeline highlight for the current / next item. */
   focus?: 'Now' | 'Next' | null;
+  /** Day being shown/edited (defaults to today). */
+  date?: string;
+  /** Show the habit's scheduled time in its meta line (plain lists, not the timeline). */
+  showTime?: boolean;
 }
 
-export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelete, dragHandlers, dimmed, focus }: RowProps) {
+export function HabitRow({
+  row,
+  editMode,
+  onToggle,
+  onOpen,
+  onLongPress,
+  onDelete,
+  dragHandlers,
+  dimmed,
+  focus,
+  date,
+  showTime,
+}: RowProps) {
   const { idx, ctx } = useStore();
   const s = useThemedStyles(makeStyles);
   const h = row.habit;
-  const days = last7(ctx.today);
-  const tl = timeline(h, idx, days[0], ctx.today, ctx);
+  const day = date ?? ctx.today;
+  const isToday = day === ctx.today;
+  // Dots: the 7 days ending on the day shown. `today` = that day's state.
+  const days = last7(day);
+  const tl = timeline(h, idx, days[0], day, ctx);
   const dotStates = days.map((d) => tl.states.get(d) ?? 'none');
   const today = dotStates[6];
-  const week = progress(h, idx, weekDays(ctx.today), ctx);
-  const due = dueLabel(h, idx, ctx);
-  const risk = missedTwiceRisk(h, idx, ctx);
+  const week = progress(h, idx, weekDays(day), ctx);
+  const due = isToday ? dueLabel(h, idx, ctx) : null;
+  const risk = isToday && missedTwiceRisk(h, idx, ctx);
   const feel = feelingStats(h, idx);
+  const dayFeeling = idx.get(h.id)?.get(day)?.feeling ?? null;
   const isNext =
-    row.anchor != null && today === 'pending' && stateOn(row.anchor, idx, ctx.today, ctx) === 'done';
+    isToday && row.anchor != null && today === 'pending' && stateOn(row.anchor, idx, ctx.today, ctx) === 'done';
 
   const [scale] = useState(() => new Animated.Value(1));
   const prev = useRef(today);
@@ -56,6 +77,9 @@ export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelet
 
   const metaParts: React.ReactNode[] = [];
   if (focus) metaParts.push(<Text key="focus" style={s.next}>{focus}</Text>);
+  if (showTime && h.scheduled_time) metaParts.push(<Text key="time" style={s.meta}>{formatTime(h.scheduled_time)}</Text>);
+  if (!isToday && today === 'missed') metaParts.push(<Text key="missed" style={s.meta}>missed · tap to mark done</Text>);
+  if (!isToday && dayFeeling != null) metaParts.push(<Text key="df" style={s.meta}>felt {FEELINGS[dayFeeling - 1]}</Text>);
   if (isNext && !focus) metaParts.push(<Text key="next" style={s.next}>Next up</Text>);
   if (risk) metaParts.push(<Text key="risk" style={s.risk}>⚑ missed yesterday</Text>);
   if (due)
@@ -65,13 +89,13 @@ export function HabitRow({ row, editMode, onToggle, onOpen, onLongPress, onDelet
       </Text>,
     );
   if (today === 'skipped') metaParts.push(<Text key="skip" style={s.meta}>rest day</Text>);
-  if (feel.count >= 10 && feel.avg != null)
+  if (isToday && feel.count >= 10 && feel.avg != null)
     metaParts.push(
       <Text key="feel" style={s.meta}>
         usually {feelingLabel(feel.avg)} after this
       </Text>,
     );
-  if (editMode && dimmed) metaParts.push(<Text key="nt" style={s.meta}>not today</Text>);
+  if (editMode && dimmed) metaParts.push(<Text key="nt" style={s.meta}>{isToday ? 'not today' : 'not due this day'}</Text>);
 
   const weekText =
     week.target != null ? `${week.done}/${week.target}` : week.pct == null ? '—' : `${Math.round(week.pct * 100)}%`;
