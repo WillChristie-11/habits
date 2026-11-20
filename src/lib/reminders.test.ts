@@ -25,6 +25,9 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     habit_kind: 'want',
     session_minutes: 15,
     ready_minutes: 3,
+    unit: null,
+    target_min: null,
+    target_max: null,
     ladder: [],
     ladder_index: 0,
     pair_with: null,
@@ -277,4 +280,15 @@ test('evening nudge carries behind-pace want habits as a line (never avoid habit
   assert.equal(ev.body, 'Lift: 0/2, 2 days left');
   assert.match(ev.title, /^This week · 2 h until/);
   assert.equal(paceText({ habit: lift, done: 0, target: 2, daysLeft: 1 }), 'Lift: 0/2, 1 day left');
+});
+
+test('activities are never expected, missed, flagged, counted or nudged', () => {
+  const run = habit(daily, { kind: 'activity', name: 'Run', unit: 'mi', section: 'week' });
+  const idx = indexRecords([]);
+  assert.deepEqual(todayCompletion([run], idx, ctx), { done: 0, total: 0, pct: 0 });
+  assert.equal(missedTwiceRisk(run, idx, ctx), false);
+  assert.deepEqual(checkinCandidates([run], idx, ctx, TODAY), []);
+  const plan = planNotifications([run], idx, ctx, { ...DEFAULT_REMINDERS }, at('06:00'));
+  assert.deepEqual(plan, []);
+  assert.deepEqual(banners([run], idx, ctx, R, at('21:00')), []);
 });

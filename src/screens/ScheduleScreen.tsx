@@ -17,7 +17,8 @@ export function ScheduleScreen() {
   const actions = useHabitActions();
 
   const layout = useMemo(
-    () => layoutDay(habits, editMode ? () => true : (h) => visibleToday(h, idx, ctx)),
+    // Activities are logged, not scheduled.
+    () => layoutDay(habits.filter((h) => h.kind !== 'activity'), editMode ? () => true : (h) => visibleToday(h, idx, ctx)),
     [habits, editMode, idx, ctx],
   );
   const anchors = habits.filter((h) => h.kind === 'anchor').length;

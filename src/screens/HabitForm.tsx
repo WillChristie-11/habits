@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { Frequency, FrequencyType, Habit, HabitInput, HabitKind, ItemKind, Section } from '../types';
+import type { ActivityUnit, Frequency, FrequencyType, Habit, HabitInput, HabitKind, ItemKind, Section } from '../types';
 import { useStore } from '../store';
 import { Chip, Help, Input, Label, Segmented, Stepper, Toggle } from '../components/ui';
 import { TimeField, formatTime } from '../components/TimeField';
@@ -16,7 +16,7 @@ import { useThemedStyles, type Theme } from '../theme';
 interface Props {
   visible: boolean;
   habit: Habit | null; // null = new
-  /** For new items: start as a habit or an anchor. */
+  /** For new items: start as a habit, anchor or activity. */
   defaultKind?: ItemKind;
   onClose(): void;
 }
@@ -40,22 +40,12 @@ export function HabitForm({ visible, habit, defaultKind = 'habit', onClose }: Pr
   const s = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.screen}>{visible && (
-          <FormBody habit={habit} defaultKind={defaultKind} onClose={onClose} />
-        )}</View>
+      <View style={s.screen}>{visible && <FormBody habit={habit} defaultKind={defaultKind} onClose={onClose} />}</View>
     </Modal>
   );
 }
 
-function FormBody({
-  habit,
-  defaultKind,
-  onClose,
-}: {
-  habit: Habit | null;
-  defaultKind: ItemKind;
-  onClose(): void;
-}) {
+function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaultKind: ItemKind; onClose(): void }) {
   const s = useThemedStyles(makeStyles);
   const { habits, addHabit, editHabit } = useStore();
 
@@ -94,6 +84,11 @@ function FormBody({
   const [reminder, setReminder] = useState(habit?.reminder ?? false);
   const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);
   const [permDenied, setPermDenied] = useState(false);
+  const [unit, setUnit] = useState<ActivityUnit | 'none'>(habit?.unit ?? (habit ? 'none' : 'mi'));
+  const [hasTarget, setHasTarget] = useState(habit?.target_min != null || habit?.target_max != null);
+  const [targetMin, setTargetMin] = useState(habit?.target_min ?? 2);
+  const [targetMax, setTargetMax] = useState(habit?.target_max ?? 3);
+  const [more, setMore] = useState(false);
 
   async function toggleReminder(on: boolean) {
     setReminder(on);
@@ -101,15 +96,18 @@ function FormBody({
   }
 
   const isAnchor = kind === 'anchor';
+  const isActivity = kind === 'activity';
+  const isHabit = kind === 'habit';
+  const avoid = isHabit && habitKind === 'avoid';
   const weekly = ftype === 'weekly_count' || ftype === 'every_n_days';
   const section: Section = isAnchor
     ? sectionForTime(time)
-    : weekly
+    : isActivity || weekly
       ? 'week'
       : when === 'time'
         ? sectionForTime(time)
         : when;
-  const scheduled = isAnchor || (!weekly && when === 'time');
+  const scheduled = isAnchor || (isHabit && !weekly && when === 'time');
 
   // Stack candidates: any anchor or timeline item, plus habits in the same section; never a loop.
   const createsLoop = (candidate: Habit) => {
@@ -122,12 +120,17 @@ function FormBody({
     }
     return false;
   };
-  const candidates = isAnchor || scheduled
-    ? []
-    : habits
-        .filter((h) => h.id !== habit?.id && (onTimeline(h) || (h.kind === 'habit' && h.section === section)))
-        .filter((h) => !createsLoop(h))
-        .sort((a, b) => Number(onTimeline(b)) - Number(onTimeline(a)) || (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? ''));
+  const candidates =
+    !isHabit || scheduled
+      ? []
+      : habits
+          .filter((h) => h.id !== habit?.id && (onTimeline(h) || (h.kind === 'habit' && h.section === section)))
+          .filter((h) => !createsLoop(h))
+          .sort(
+            (a, b) =>
+              Number(onTimeline(b)) - Number(onTimeline(a)) ||
+              (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? ''),
+          );
   const validAnchor = stackAfter != null && candidates.some((a) => a.id === stackAfter) ? stackAfter : null;
   const anchorName = validAnchor != null ? (habits.find((x) => x.id === validAnchor)?.name ?? null) : null;
   const openPlan = () => {
@@ -135,14 +138,16 @@ function FormBody({
     if (!planAction.trim()) setPlanAction(name.trim().toLowerCase());
   };
 
-  const daysOk = isAnchor || ftype !== 'specific_days' ? true : days.length > 0;
+  const daysOk = !isHabit || ftype !== 'specific_days' ? true : days.length > 0;
   const anchorDaysOk = !isAnchor || days.length > 0;
   const canSave = name.trim().length > 0 && daysOk && anchorDaysOk;
 
   async function save() {
     if (!canSave) return;
     let frequency: Frequency;
-    if (isAnchor) {
+    if (isActivity) {
+      frequency = { type: 'daily' }; // unused: activities have no expected days
+    } else if (isAnchor) {
       frequency = days.length === 7 ? { type: 'daily' } : { type: 'specific_days', days: [...days].sort() };
     } else {
       switch (ftype) {
@@ -164,19 +169,23 @@ function FormBody({
       name: name.trim(),
       section,
       frequency,
-      why: isAnchor ? null : why.trim() || null,
-      minimum_version: isAnchor ? null : minimum.trim() || null,
-      messages: isAnchor ? [] : messages,
-      habit_kind: isAnchor ? 'want' : habitKind,
+      why: isHabit ? why.trim() || null : null,
+      minimum_version: isHabit ? minimum.trim() || null : null,
+      messages: isHabit ? messages : [],
+      habit_kind: isHabit ? habitKind : 'want',
       session_minutes: sessionMin,
       ready_minutes: readyMin,
-      ladder: isAnchor ? [] : ladder,
-      ladder_index: isAnchor ? 0 : Math.min(ladderIndex, ladder.length),
-      pair_with: isAnchor ? null : pairWith.trim() || null,
-      plan_when: isAnchor ? null : planWhen?.trim() || null,
-      plan_action: isAnchor || !planWhen?.trim() ? null : planAction.trim() || null,
-      obstacle: isAnchor ? null : obstacle?.trim() || null,
-      stack_after: validAnchor,
+      // Avoid-only fields are kept only for avoid habits.
+      ladder: avoid ? ladder : [],
+      ladder_index: avoid ? Math.min(ladderIndex, ladder.length) : 0,
+      pair_with: avoid ? pairWith.trim() || null : null,
+      plan_when: isHabit ? planWhen?.trim() || null : null,
+      plan_action: isHabit && planWhen?.trim() ? planAction.trim() || null : null,
+      obstacle: isHabit ? obstacle?.trim() || null : null,
+      unit: isActivity && unit !== 'none' ? unit : null,
+      target_min: isActivity && hasTarget ? Math.min(targetMin, targetMax) : null,
+      target_max: isActivity && hasTarget ? Math.max(targetMin, targetMax) : null,
+      stack_after: isHabit ? validAnchor : null,
       scheduled_time: scheduled ? time : null,
       end_time: isAnchor && hasEnd ? endTime : null,
       reminder: scheduled && reminder,
@@ -236,22 +245,44 @@ function FormBody({
     </View>
   );
 
+  // How many of the "More options" are already in use (shown on the collapsed row).
+  const moreSet = [
+    scheduled && reminder,
+    readyMin !== 3,
+    isHabit && validAnchor != null,
+    isHabit && planWhen != null,
+    isHabit && obstacle != null,
+    isHabit && !!why.trim(),
+    isHabit && !!minimum.trim(),
+    isHabit && messages.length > 0,
+  ].filter(Boolean).length;
+
+  const title = `${habit ? 'Edit' : 'New'} ${isAnchor ? 'anchor' : isActivity ? 'activity' : 'habit'}`;
+
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
       <View style={s.bar}>
         <Pressable onPress={onClose} hitSlop={10}>
           <Text style={s.barBtn}>Cancel</Text>
         </Pressable>
-        <Text style={s.barTitle}>
-          {habit ? 'Edit' : 'New'} {isAnchor ? 'anchor' : 'habit'}
-        </Text>
+        <Text style={s.barTitle}>{title}</Text>
         <Pressable onPress={save} disabled={!canSave} hitSlop={10}>
           <Text style={[s.barBtn, s.barSave, !canSave && { opacity: 0.35 }]}>Save</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        <Label>Name</Label>
+        <Input
+          value={name}
+          onChangeText={setName}
+          placeholder={isAnchor ? 'e.g. Breakfast' : isActivity ? 'e.g. Run' : 'e.g. Stretch'}
+          autoFocus={!habit}
+          returnKeyType="done"
+        />
+
         {!habit && (
           <>
+            <Label>Kind</Label>
             <Segmented<ItemKind>
               value={kind}
               onChange={(k) => {
@@ -263,28 +294,52 @@ function FormBody({
               options={[
                 { value: 'habit', label: 'Habit' },
                 { value: 'anchor', label: 'Anchor' },
+                { value: 'activity', label: 'Activity' },
               ]}
             />
             <View style={{ marginTop: 8 }}>
               <Help>
                 {isAnchor
-                  ? 'A fixed point in your day, like Wake up or Work. Not tracked; tap to dismiss.'
-                  : 'Something you want to do regularly. Tracked with dots and weekly %.'}
+                  ? 'A fixed point in your day, like Wake up or Work. Tap to mark it done.'
+                  : isActivity
+                    ? 'Something you just log when it happens, like a run. Never scheduled or missed.'
+                    : 'Something you do regularly, with a schedule.'}
               </Help>
             </View>
           </>
         )}
 
-        <Label>Name</Label>
-        <Input
-          value={name}
-          onChangeText={setName}
-          placeholder={isAnchor ? 'e.g. Breakfast' : 'e.g. Stretch'}
-          autoFocus={!habit}
-          returnKeyType="done"
-        />
+        {isActivity && (
+          <>
+            <Label>Unit</Label>
+            <Segmented<ActivityUnit | 'none'>
+              value={unit}
+              onChange={setUnit}
+              options={[
+                { value: 'mi', label: 'Miles' },
+                { value: 'min', label: 'Minutes' },
+                { value: 'none', label: 'None' },
+              ]}
+            />
+            <View style={{ marginTop: 12 }}>
+              <Toggle
+                label="Soft weekly target"
+                note="Only shown in the Sunday recap. Never a goal you can miss."
+                value={hasTarget}
+                onChange={setHasTarget}
+              />
+            </View>
+            {hasTarget && (
+              <View style={s.targetRow}>
+                <Stepper value={targetMin} min={1} max={14} onChange={setTargetMin} />
+                <Text style={s.targetTo}>to</Text>
+                <Stepper value={targetMax} min={1} max={14} onChange={setTargetMax} suffix="× a week" />
+              </View>
+            )}
+          </>
+        )}
 
-        {isAnchor ? (
+        {isAnchor && (
           <>
             <Label>Time</Label>
             <TimeField value={time} onChange={setTime} />
@@ -298,13 +353,12 @@ function FormBody({
             )}
             <Label>Days</Label>
             {dayChips}
-            <Label>Reminder</Label>
-            {reminderFields}
-            {readyFields}
           </>
-        ) : (
+        )}
+
+        {isHabit && (
           <>
-            <Label>Type</Label>
+            <Label>Want or avoid</Label>
             <Segmented<HabitKind>
               value={habitKind}
               onChange={setHabitKind}
@@ -315,7 +369,7 @@ function FormBody({
             />
             <View style={{ marginTop: 8 }}>
               <Help>
-                {habitKind === 'avoid'
+                {avoid
                   ? 'For things you put off. It counts as done as soon as you start a short timed session.'
                   : 'Counts as done when you check it off.'}
               </Help>
@@ -333,25 +387,12 @@ function FormBody({
               ]}
             />
             <View style={s.detail}>
-              {ftype === 'daily' && <Help>Every day.</Help>}
-              {ftype === 'specific_days' && (
-                <>
-                  {dayChips}
-                  <Help>Only appears on these days.</Help>
-                </>
-              )}
+              {ftype === 'specific_days' && dayChips}
               {ftype === 'weekly_count' && (
-                <>
-                  <Stepper value={count} min={1} max={7} onChange={setCount} suffix="× / week" />
-                  <Help>Any days you like. Lives in “This week” and shows x/{count}.</Help>
-                </>
+                <Stepper value={count} min={1} max={7} onChange={setCount} suffix="× / week" />
               )}
-              {ftype === 'every_n_days' && (
-                <>
-                  <Stepper value={n} min={2} max={30} onChange={setN} suffix="days" />
-                  <Help>Lives in “This week”, marked due / overdue from the last time you did it.</Help>
-                </>
-              )}
+              {ftype === 'every_n_days' && <Stepper value={n} min={2} max={30} onChange={setN} suffix="days" />}
+              {weekly && <Help>Lives in “This week”.</Help>}
             </View>
 
             {!weekly && (
@@ -369,116 +410,158 @@ function FormBody({
                 {when === 'time' && (
                   <View style={s.detail}>
                     <TimeField value={time} onChange={setTime} />
-                    <Help>Shows on today’s schedule at this time.</Help>
-                    {reminderFields}
                   </View>
                 )}
               </>
             )}
 
-            {candidates.length > 0 && (
+            {avoid && (
               <>
-                <Label hint="optional">Stack after</Label>
-                <View style={s.chips}>
-                  <Chip label="None" active={validAnchor == null} onPress={() => setStackAfter(null)} />
-                  {candidates.map((a) => (
-                    <Chip
-                      key={a.id}
-                      label={a.scheduled_time && onTimeline(a) ? `${a.name} · ${formatTime(a.scheduled_time)}` : a.name}
-                      active={validAnchor === a.id}
-                      onPress={() => setStackAfter(a.id)}
-                    />
-                  ))}
+                <Label>Session</Label>
+                <Stepper value={sessionMin} min={5} max={120} step={5} onChange={setSessionMin} suffix="min" />
+                <View style={{ marginTop: 8 }}>
+                  <Help>{`“Start ${sessionMin} min” opens a timer; starting is what counts.`}</Help>
                 </View>
-                {validAnchor != null && (
-                  <View style={{ marginTop: 8 }}>
-                    <Help>Shows right under it, and is highlighted once it’s done.</Help>
-                  </View>
-                )}
+
+                <Label hint="optional">Ladder</Label>
+                <StepList
+                  steps={ladder}
+                  current={ladderIndex}
+                  onChange={(steps, cur) => {
+                    setLadder(steps);
+                    setLadderIndex(cur);
+                  }}
+                />
+                <View style={{ marginTop: 8 }}>
+                  <Help>Small concrete steps in order. The row shows only the next one.</Help>
+                </View>
+
+                <Label hint="optional">Pair with</Label>
+                <Input value={pairWith} onChangeText={setPairWith} placeholder="e.g. good coffee" />
               </>
             )}
+          </>
+        )}
 
-            {readyFields}
+        {!isActivity && (
+          <>
+            <Pressable
+              onPress={() => setMore((m) => !m)}
+              style={s.moreRow}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: more }}
+            >
+              <Text style={s.moreText}>More options</Text>
+              <Text style={s.moreMeta}>
+                {moreSet ? `${moreSet} set  ` : ''}
+                {more ? '▴' : '▾'}
+              </Text>
+            </Pressable>
 
-            <Label>Session</Label>
-            <Stepper value={sessionMin} min={5} max={120} step={5} onChange={setSessionMin} suffix="min" />
-            <View style={{ marginTop: 8 }}>
-              <Help>
-                {habitKind === 'avoid'
-                  ? `“Start ${sessionMin} min” opens a timer; starting is what counts.`
-                  : `“Start ${sessionMin} min” is in the habit’s details if you want a timer.`}
-              </Help>
-            </View>
+            {more && (
+              <View>
+                {scheduled && (
+                  <>
+                    <Label>Reminder</Label>
+                    {reminderFields}
+                  </>
+                )}
+                {readyFields}
 
-            <Label hint="optional">Ladder</Label>
-            <StepList
-              steps={ladder}
-              current={ladderIndex}
-              onChange={(steps, cur) => {
-                setLadder(steps);
-                setLadderIndex(cur);
-              }}
-            />
-            <View style={{ marginTop: 8 }}>
-              <Help>Small concrete steps in order. The row shows only the next one; after a session you can move up a step.</Help>
-            </View>
+                {isHabit && candidates.length > 0 && (
+                  <>
+                    <Label hint="optional">Stack after</Label>
+                    <View style={s.chips}>
+                      <Chip label="None" active={validAnchor == null} onPress={() => setStackAfter(null)} />
+                      {candidates.map((a) => (
+                        <Chip
+                          key={a.id}
+                          label={
+                            a.scheduled_time && onTimeline(a) ? `${a.name} · ${formatTime(a.scheduled_time)}` : a.name
+                          }
+                          active={validAnchor === a.id}
+                          onPress={() => setStackAfter(a.id)}
+                        />
+                      ))}
+                    </View>
+                  </>
+                )}
 
-            <Label hint="optional">Pair with</Label>
-            <Input value={pairWith} onChangeText={setPairWith} placeholder="e.g. good coffee" />
+                {isHabit && (
+                  <>
+                    <Label hint="optional">If-then plan</Label>
+                    {planWhen == null ? (
+                      <Pressable onPress={openPlan} style={s.addPlan} accessibilityRole="button">
+                        <Text style={s.addPlanText}>＋ Add an if-then plan</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={s.planBox}>
+                        <View style={s.planRow}>
+                          <Text style={s.planWord}>When</Text>
+                          <Input
+                            value={planWhen}
+                            onChangeText={setPlanWhen}
+                            placeholder="I’ve poured my coffee"
+                            style={{ flex: 1 }}
+                          />
+                        </View>
+                        <View style={s.planRow}>
+                          <Text style={s.planWord}>I will</Text>
+                          <Input
+                            value={planAction}
+                            onChangeText={setPlanAction}
+                            placeholder={name.trim().toLowerCase() || 'do it'}
+                            style={{ flex: 1 }}
+                          />
+                        </View>
+                        <Pressable onPress={() => setPlanWhen(null)} hitSlop={8}>
+                          <Text style={s.removePlan}>Remove plan</Text>
+                        </Pressable>
+                      </View>
+                    )}
 
-            <Label hint="optional">If-then plan</Label>
-            {planWhen == null ? (
-              <Pressable onPress={openPlan} style={s.addPlan} accessibilityRole="button">
-                <Text style={s.addPlanText}>＋ Add an if-then plan</Text>
-              </Pressable>
-            ) : (
-              <View style={s.planBox}>
-                <View style={s.planRow}>
-                  <Text style={s.planWord}>When</Text>
-                  <Input value={planWhen} onChangeText={setPlanWhen} placeholder="I’ve poured my coffee" style={{ flex: 1 }} />
-                </View>
-                <View style={s.planRow}>
-                  <Text style={s.planWord}>I will</Text>
-                  <Input value={planAction} onChangeText={setPlanAction} placeholder={name.trim().toLowerCase() || 'do it'} style={{ flex: 1 }} />
-                </View>
-                <Pressable onPress={() => setPlanWhen(null)} hitSlop={8}>
-                  <Text style={s.removePlan}>Remove plan</Text>
-                </Pressable>
+                    <Label hint="optional">Obstacle plan</Label>
+                    {obstacle == null ? (
+                      <Pressable onPress={() => setObstacle('')} style={s.addPlan} accessibilityRole="button">
+                        <Text style={s.addPlanText}>＋ Add an obstacle plan</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={s.planBox}>
+                        <View style={s.planRow}>
+                          <Text style={s.planWord}>If</Text>
+                          <Input
+                            value={obstacle}
+                            onChangeText={setObstacle}
+                            placeholder="I’m wiped out after work"
+                            style={{ flex: 1 }}
+                            autoFocus
+                          />
+                        </View>
+                        <Text style={s.planTail}>
+                          then I’ll do the minimum version{minimum.trim() ? `: ${minimum.trim()}` : '.'}
+                        </Text>
+                        <Pressable onPress={() => setObstacle(null)} hitSlop={8}>
+                          <Text style={s.removePlan}>Remove</Text>
+                        </Pressable>
+                      </View>
+                    )}
+
+                    <Label hint="optional">Why</Label>
+                    <Input value={why} onChangeText={setWhy} placeholder="What this does for you" multiline />
+
+                    <Label hint="optional">Minimum version</Label>
+                    <Input
+                      value={minimum}
+                      onChangeText={setMinimum}
+                      placeholder="The smallest version that still counts"
+                    />
+
+                    <Label hint="optional">More motivation</Label>
+                    <MessageList value={messages} onChange={setMessages} />
+                  </>
+                )}
               </View>
             )}
-            <View style={{ marginTop: 8 }}>
-              <Help>Used as the reminder’s text. Plans tied to a cue are easier to follow.</Help>
-            </View>
-
-            <Label hint="optional">Obstacle plan</Label>
-            {obstacle == null ? (
-              <Pressable onPress={() => setObstacle('')} style={s.addPlan} accessibilityRole="button">
-                <Text style={s.addPlanText}>＋ Add an obstacle plan</Text>
-              </Pressable>
-            ) : (
-              <View style={s.planBox}>
-                <View style={s.planRow}>
-                  <Text style={s.planWord}>If</Text>
-                  <Input value={obstacle} onChangeText={setObstacle} placeholder="I’m wiped out after work" style={{ flex: 1 }} autoFocus />
-                </View>
-                <Text style={s.planTail}>then I’ll do the minimum version{minimum.trim() ? `: ${minimum.trim()}` : '.'}</Text>
-                <Pressable onPress={() => setObstacle(null)} hitSlop={8}>
-                  <Text style={s.removePlan}>Remove</Text>
-                </Pressable>
-              </View>
-            )}
-
-            <Label hint="optional">Why</Label>
-            <Input value={why} onChangeText={setWhy} placeholder="What this does for you" multiline />
-
-            <Label hint="optional">Minimum version</Label>
-            <Input value={minimum} onChangeText={setMinimum} placeholder="The smallest version that still counts" />
-
-            <Label hint="optional">More motivation</Label>
-            <MessageList value={messages} onChange={setMessages} />
-            <View style={{ marginTop: 8 }}>
-              <Help>Reminders rotate through your why and these, one a day.</Help>
-            </View>
           </>
         )}
       </ScrollView>
@@ -512,4 +595,18 @@ const makeStyles = (t: Theme) =>
     planWord: { width: 46, fontSize: 15, fontWeight: '600', color: t.text },
     planTail: { fontSize: 15, color: t.text, marginLeft: 56 },
     removePlan: { fontSize: 13, color: t.textMuted, marginLeft: 56, marginTop: 2 },
+    moreRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 28,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      backgroundColor: t.surface,
+    },
+    moreText: { fontSize: 16, fontWeight: '600', color: t.text },
+    moreMeta: { fontSize: 14, color: t.textMuted },
+    targetRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' },
+    targetTo: { fontSize: 15, color: t.textMuted },
   });

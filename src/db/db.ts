@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, JournalPage, Meta, RecordStatus, Section } from '../types';
 import { entryToLines } from '../lib/journal';
 import { defaultAnchors } from '../lib/defaults';
+import { BACKUP_APP, type Backup } from '../lib/backupFormat';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -10,7 +11,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -139,6 +140,21 @@ async function open() {
     // v8: per-item "Get ready" countdown length.
     await db.execAsync(`ALTER TABLE habits ADD COLUMN ready_minutes INTEGER NOT NULL DEFAULT 3;`);
   }
+  if (version < 9) {
+    // v9: logged activities (unit + soft weekly target) and the weekly intention.
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE habits ADD COLUMN unit TEXT;
+        ALTER TABLE habits ADD COLUMN target_min INTEGER;
+        ALTER TABLE habits ADD COLUMN target_max INTEGER;
+        CREATE TABLE IF NOT EXISTS weeks (
+          week_start TEXT PRIMARY KEY,
+          intention TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    });
+  }
   if (version === 0) {
     // Brand-new install: start with a few editable anchors.
     const now = new Date().toISOString();
@@ -173,6 +189,9 @@ interface HabitRow {
   habit_kind: string;
   session_minutes: number;
   ready_minutes: number;
+  unit: string | null;
+  target_min: number | null;
+  target_max: number | null;
   ladder: string | null;
   ladder_index: number;
   pair_with: string | null;
@@ -220,7 +239,10 @@ function rowToHabit(r: HabitRow): Habit {
   }
   return {
     id: r.id,
-    kind: r.kind === 'anchor' ? 'anchor' : 'habit',
+    kind: r.kind === 'anchor' || r.kind === 'activity' ? r.kind : 'habit',
+    unit: r.unit === 'mi' || r.unit === 'min' ? r.unit : null,
+    target_min: r.target_min ?? null,
+    target_max: r.target_max ?? null,
     name: r.name,
     section: r.section,
     why: r.why,
@@ -272,8 +294,9 @@ export async function createHabit(input: HabitInput): Promise<number> {
   const res = await db.runAsync(
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
        scheduled_time, end_time, reminder, remind_before, meta, messages,
-       habit_kind, session_minutes, ladder, ladder_index, pair_with, plan_when, plan_action, obstacle, ready_minutes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       habit_kind, session_minutes, ladder, ladder_index, pair_with, plan_when, plan_action, obstacle, ready_minutes,
+       unit, target_min, target_max, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
     input.section,
@@ -297,6 +320,9 @@ export async function createHabit(input: HabitInput): Promise<number> {
     input.plan_action,
     input.obstacle,
     input.ready_minutes,
+    input.unit,
+    input.target_min,
+    input.target_max,
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -328,6 +354,9 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.plan_action,
     input.obstacle,
     input.ready_minutes,
+    input.unit,
+    input.target_min,
+    input.target_max,
   ];
   if (current && current.section !== input.section) {
     // Moving sections: append to the end of the new one, and detach anything stacked on it.
@@ -345,7 +374,8 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
        scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?,
        habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?,
-       plan_when = ?, plan_action = ?, obstacle = ?, ready_minutes = ?${orderClause}
+       plan_when = ?, plan_action = ?, obstacle = ?, ready_minutes = ?,
+       unit = ?, target_min = ?, target_max = ?${orderClause}
      WHERE id = ?`,
     ...params,
   );
@@ -442,7 +472,6 @@ export async function savePage(date: string, text: string): Promise<void> {
 
 // --- Backup ---------------------------------------------------------------------------------
 
-import { BACKUP_APP, type Backup } from '../lib/backupFormat';
 export { validateBackup, type Backup } from '../lib/backupFormat';
 
 async function userTables(db: SQLite.SQLiteDatabase): Promise<string[]> {
@@ -496,4 +525,34 @@ export async function importAll(backup: Backup): Promise<Record<string, number>>
     await db.execAsync('PRAGMA foreign_keys = ON;');
   }
   return counts;
+}
+
+// --- Weekly intention ------------------------------------------------------------------------
+
+export async function loadWeeks(): Promise<Record<string, string>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ week_start: string; intention: string }>('SELECT week_start, intention FROM weeks');
+  return Object.fromEntries(rows.map((r) => [r.week_start, r.intention]));
+}
+
+/** One line per week (keyed by its Monday); empty removes it. */
+export async function saveWeek(weekStart: string, intention: string): Promise<void> {
+  const db = await getDb();
+  if (!intention.trim()) {
+    await db.runAsync('DELETE FROM weeks WHERE week_start = ?', weekStart);
+    return;
+  }
+  await db.runAsync(
+    `INSERT INTO weeks (week_start, intention, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (week_start) DO UPDATE SET intention = excluded.intention, updated_at = excluded.updated_at`,
+    weekStart,
+    intention.trim(),
+    new Date().toISOString(),
+  );
+}
+
+/** Replace a record's meta (an activity log's amount). */
+export async function setRecordMeta(habitId: number, date: string, meta: Meta | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE records SET meta = ? WHERE habit_id = ? AND date = ?', meta ? JSON.stringify(meta) : null, habitId, date);
 }

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit } from '../types';
 import { indexRecords } from './schedule';
-import { entryToLines, firstLine, intentionFrom, pageDates, recapLines, weekCounts } from './journal';
+import { entryToLines, firstLine, pageDates, recapLines, targetText, weekCounts } from './journal';
 
 const SUN = '2026-11-22';
 let nextId = 1;
@@ -19,6 +19,9 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     habit_kind: 'want',
     session_minutes: 15,
     ready_minutes: 3,
+    unit: null,
+    target_min: null,
+    target_max: null,
     ladder: [],
     ladder_index: 0,
     pair_with: null,
@@ -48,13 +51,9 @@ const rec = (h: Habit, date: string, status: DayRecord['status'] = 'done'): DayR
   meta: null,
 });
 
-test('first line under ~80 characters is the day intention', () => {
+test('first line skips blank lines', () => {
   assert.equal(firstLine('\n  Ship the CV  \nthen rest'), 'Ship the CV');
-  assert.equal(intentionFrom('Ship the CV\nmore words'), 'Ship the CV');
-  assert.equal(intentionFrom('x'.repeat(81)), null);
-  assert.equal(intentionFrom('x'.repeat(80)), 'x'.repeat(80));
-  assert.equal(intentionFrom('   \n  '), null);
-  assert.equal(intentionFrom(undefined), null);
+  assert.equal(firstLine(undefined), '');
 });
 
 test('date wheel: only days with writing, plus today, oldest first', () => {
@@ -98,4 +97,19 @@ test('old structured entries fold into plain page lines (v7 migration)', () => {
   assert.deepEqual(entryToLines('reflection', '{"wentWell":"walk","inTheWay":""}'), ['Went well: walk']);
   assert.deepEqual(entryToLines('weekly', '{"liked":"a","changes":"c"}'), ['Liked this week: a', 'Next week: c']);
   assert.deepEqual(entryToLines('note', 'not json'), []);
+});
+
+test('Sunday recap: activities show count, total and their soft target; never a miss', () => {
+  const run = habit({ type: 'daily' }, { kind: 'activity', name: 'Run', unit: 'mi', target_min: 2, target_max: 3 });
+  const bike = habit({ type: 'daily' }, { kind: 'activity', name: 'Bike', unit: 'min' });
+  const swim = habit({ type: 'daily' }, { kind: 'activity', name: 'Swim', unit: null });
+  const log = (h: Habit, d: string, amount?: number) => ({ ...rec(h, d), meta: { type: h.name.toLowerCase(), amount: amount ?? null, unit: h.unit } });
+  const idx = indexRecords([log(run, '2026-11-16', 4), log(run, '2026-11-18', 6.5), log(run, '2026-11-20', 3.5), log(bike, '2026-11-17', 45), log(swim, '2026-11-19')]);
+  assert.deepEqual(
+    weekCounts([run, bike, swim], idx, { today: SUN }, SUN).map((c) => c.text),
+    ['Run 3× · 14 mi · you usually aim for 2–3', 'Bike 1× · 45 min', 'Swim 1×'],
+  );
+  assert.equal(targetText(2, 2), 'you usually aim for 2');
+  assert.equal(targetText(null, null), null);
+  assert.equal(weekCounts([run], indexRecords([]), { today: SUN }, SUN).length, 0);
 });

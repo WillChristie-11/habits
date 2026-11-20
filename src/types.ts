@@ -1,7 +1,13 @@
 export type Section = 'morning' | 'evening' | 'week';
 
-/** "habit" is tracked (%, feeling, dots). "anchor" is a scheduled routine item (Wake up, Work). */
-export type ItemKind = 'habit' | 'anchor';
+/**
+ * "habit" is tracked (%, feeling, dots). "anchor" is a scheduled routine item (Wake up, Work).
+ * "activity" is something you just log when it happens (Run, Bike): no schedule, never missed.
+ */
+export type ItemKind = 'habit' | 'anchor' | 'activity';
+
+/** Units an activity's amount can be logged in. */
+export type ActivityUnit = 'mi' | 'min';
 
 /** want = something you want to do (done when finished); avoid = something you put off (done once started). */
 export type HabitKind = 'want' | 'avoid';
@@ -47,6 +53,11 @@ export interface Habit {
   ladder_index: number;
   /** Something pleasant to pair the session with, e.g. "good coffee". */
   pair_with: string | null;
+  /** Activities: what an amount is measured in (null = count only). */
+  unit: ActivityUnit | null;
+  /** Activities: optional soft weekly target range, shown only in the Sunday recap. */
+  target_min: number | null;
+  target_max: number | null;
   /** Implementation intention: "When <plan_when>, I will <plan_action>." */
   plan_when: string | null;
   plan_action: string | null;

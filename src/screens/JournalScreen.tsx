@@ -16,7 +16,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useStore } from '../store';
 import { pageDates, recapLines, weekCounts } from '../lib/journal';
-import { WEEKDAY_NAMES, fromKey, weekday } from '../lib/dates';
+import { WEEKDAY_NAMES, addDays, fromKey, weekStart, weekday } from '../lib/dates';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -172,13 +172,21 @@ function DateStrip({
   );
 }
 
-/** Sundays: what I did this week (counts only) and the first line of each page Mon–Sat. */
+/**
+ * Sundays: what I did this week (counts and totals only), the first line of each page Mon–Sat,
+ * last week's intention, then one optional line for the coming week.
+ */
 function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
-  const { habits, idx, ctx, pages } = useStore();
+  const t = useTheme();
+  const { habits, idx, ctx, pages, weeks, saveWeek } = useStore();
   const counts = weekCounts(habits, idx, ctx, sunday);
   const lines = recapLines(pages, sunday);
-  if (!counts.length && !lines.length) return null;
+  const thisWeek = weeks[weekStart(sunday)];
+  const nextWeek = addDays(sunday, 1);
+  const editable = sunday === ctx.today;
+  const [next, setNext] = useState(weeks[nextWeek] ?? '');
+  if (!counts.length && !lines.length && !thisWeek && !editable && !weeks[nextWeek]) return null;
   return (
     <View style={s.recap}>
       <Text style={s.recapLabel}>This week</Text>
@@ -189,6 +197,33 @@ function SundayRecap({ sunday }: { sunday: string }) {
           {l.line}
         </Text>
       ))}
+      {thisWeek && (
+        <Text style={s.recapLine}>
+          <Text style={s.recapDay}>Last week was for </Text>
+          {thisWeek}
+        </Text>
+      )}
+      {editable ? (
+        <TextInput
+          value={next}
+          onChangeText={setNext}
+          onEndEditing={() => saveWeek(nextWeek, next)}
+          onBlur={() => saveWeek(nextWeek, next)}
+          placeholder="This week is for…"
+          placeholderTextColor={t.textMuted}
+          keyboardAppearance={t.dark ? 'dark' : 'light'}
+          style={s.recapInput}
+          returnKeyType="done"
+          maxLength={140}
+        />
+      ) : (
+        weeks[nextWeek] && (
+          <Text style={s.recapLine}>
+            <Text style={s.recapDay}>The week after was for </Text>
+            {weeks[nextWeek]}
+          </Text>
+        )
+      )}
       <Pressable onPress={() => router.push('/')} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: 6 }}>
         <Text style={s.recapLink}>Adjust habits</Text>
       </Pressable>
@@ -231,5 +266,14 @@ const makeStyles = (t: Theme) =>
     recapCounts: { fontSize: 14, color: t.text, fontWeight: '600', lineHeight: 20, marginBottom: 2 },
     recapLine: { fontSize: 13, color: t.textMuted, lineHeight: 18 },
     recapDay: { fontWeight: '700', color: t.text },
+    recapInput: {
+      marginTop: 6,
+      backgroundColor: t.background,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      fontSize: 15,
+      color: t.text,
+    },
     recapLink: { fontSize: 13, color: t.accent, fontWeight: '600' },
   });

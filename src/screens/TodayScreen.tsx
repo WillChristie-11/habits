@@ -12,8 +12,8 @@ import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { NextAnchorLine } from '../components/NextAnchorLine';
-import { router } from 'expo-router';
-import { intentionFrom } from '../lib/journal';
+import { WeekIntentionLine } from '../components/WeekIntention';
+import { LogRow } from '../components/LogRow';
 import { useThemedStyles, type Theme } from '../theme';
 
 const SECTIONS: Section[] = ['morning', 'evening', 'week'];
@@ -22,7 +22,7 @@ const SECTIONS: Section[] = ['morning', 'evening', 'week'];
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { habits, idx, ctx, pages } = useStore();
+  const { habits, idx, ctx } = useStore();
   const [picked, setPicked] = useState<string | null>(null);
   // Follow "today" across midnight unless a past day is being viewed.
   const date = picked && picked < ctx.today ? picked : ctx.today;
@@ -30,9 +30,6 @@ export function TodayScreen() {
   const [editMode, setEditMode] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const actions = useHabitActions(date);
-
-  // The day's intention is simply the first line of that day's journal page, if it's short.
-  const intention = intentionFrom(pages[date]);
 
   const tracked = useMemo(() => habits.filter((h) => h.kind === 'habit'), [habits]);
   const ring = dayCompletion(habits, idx, ctx, date);
@@ -42,9 +39,7 @@ export function TodayScreen() {
   );
   const hasRows = SECTIONS.some((sec) => layout.sections[sec].length > 0);
 
-  const title = isToday
-    ? 'Today'
-    : fromKey(date).toLocaleDateString(undefined, { weekday: 'long' });
+  const title = isToday ? 'Today' : fromKey(date).toLocaleDateString(undefined, { weekday: 'long' });
   const dateLine = fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
@@ -57,9 +52,12 @@ export function TodayScreen() {
         addLabel="Habit"
         links={
           isToday
-            ? tracked.length > 0
-              ? [{ label: editMode ? 'Done' : 'Edit', onPress: () => setEditMode((e) => !e), strong: editMode }]
-              : []
+            ? [
+                { label: '＋ Activity', onPress: () => actions.openForm(null, 'activity') },
+                ...(tracked.length > 0
+                  ? [{ label: editMode ? 'Done' : 'Edit', onPress: () => setEditMode((e) => !e), strong: editMode }]
+                  : []),
+              ]
             : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]
         }
       />
@@ -69,11 +67,7 @@ export function TodayScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
       >
-        {intention && (
-          <Pressable onPress={() => router.push('/journal')} style={s.intention} accessibilityHint="Opens the journal">
-            <Text style={s.intentionText}>{intention}</Text>
-          </Pressable>
-        )}
+        {isToday && <WeekIntentionLine />}
         {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} onReady={actions.getReady} />}
         {isToday && <Banners onStart={actions.startTimer} />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
@@ -107,6 +101,7 @@ export function TodayScreen() {
             />
           ))
         )}
+        {isToday && !editMode && <LogRow onEdit={(h) => actions.openForm(h)} onDelete={actions.onDelete} />}
         {editMode && <Text style={s.editHint}>Drag ≡ to reorder. Tap ✕ to remove.</Text>}
       </ScrollView>
 
@@ -123,9 +118,13 @@ const makeStyles = (t: Theme) =>
     empty: { alignItems: 'center', marginTop: 80, paddingHorizontal: 24 },
     emptyTitle: { fontSize: 22, fontWeight: '600', color: t.text },
     emptyText: { fontSize: 15, color: t.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 21 },
-    emptyBtn: { marginTop: 20, backgroundColor: t.accent, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 },
+    emptyBtn: {
+      marginTop: 20,
+      backgroundColor: t.accent,
+      paddingHorizontal: 22,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
     emptyBtnText: { color: t.onAccent, fontWeight: '600', fontSize: 16 },
-    intention: { marginTop: 10, paddingHorizontal: 4, paddingVertical: 4 },
-    intentionText: { fontSize: 18, fontWeight: '600', color: t.text, lineHeight: 24 },
     editHint: { textAlign: 'center', color: t.textMuted, fontSize: 13, marginTop: 16 },
   });

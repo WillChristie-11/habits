@@ -29,6 +29,13 @@ interface Store {
   records: DayRecord[];
   /** Journal pages by date. */
   pages: Record<string, string>;
+  /** Weekly intention by week start (Monday). */
+  weeks: Record<string, string>;
+  saveWeek(weekStart: string, intention: string): Promise<void>;
+  /** Log an activity for a day (light haptic is the caller's). */
+  logActivity(h: Habit, date: string): Promise<void>;
+  /** Set or clear an activity log's amount. */
+  setActivityAmount(h: Habit, date: string, amount: number | null): Promise<void>;
   idx: RecordIndex;
   ctx: Ctx;
   settings: Settings;
@@ -72,13 +79,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [records, setRecords] = useState<DayRecord[]>([]);
   const [pages, setPages] = useState<Record<string, string>>({});
+  const [weeks, setWeeks] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p] = await Promise.all([db.loadHabits(), db.loadRecords(), db.loadPages()]);
+    const [h, r, p, w] = await Promise.all([db.loadHabits(), db.loadRecords(), db.loadPages(), db.loadWeeks()]);
     setHabits(h);
     setRecords(r);
+    setWeeks(w);
     setPages(Object.fromEntries(p.map((x) => [x.date, x.text])));
   }, []);
 
@@ -126,6 +135,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       habits,
       records,
       pages,
+      weeks,
       idx,
       ctx,
       settings,
@@ -204,6 +214,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setSettings((s) => ({ ...s, reminders: next }));
         await db.saveSetting('reminders', JSON.stringify(next));
       },
+      async saveWeek(weekStart, intention) {
+        setWeeks((w) => {
+          const next = { ...w };
+          if (intention.trim()) next[weekStart] = intention.trim();
+          else delete next[weekStart];
+          return next;
+        });
+        await db.saveWeek(weekStart, intention);
+      },
+      async logActivity(h, date) {
+        const existing = records.find((r) => r.habit_id === h.id && r.date === date);
+        if (existing?.status === 'done') return; // already logged that day; the sheet edits it
+        await db.setRecord(h.id, date, 'done', null, { type: h.name.toLowerCase(), amount: null, unit: h.unit });
+        await reload();
+      },
+      async setActivityAmount(h, date, amount) {
+        await db.setRecordMeta(h.id, date, { type: h.name.toLowerCase(), amount, unit: h.unit });
+        await reload();
+      },
       async savePage(date, text) {
         if ((pages[date] ?? '') === (text.trim() ? text : '')) return;
         setPages((p) => {
@@ -220,7 +249,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await db.saveSetting('reminders', JSON.stringify(next));
       },
     }),
-    [ready, habits, records, pages, idx, ctx, settings, now, today, reload, loadSettingsFromDb],
+    [ready, habits, records, pages, weeks, idx, ctx, settings, now, today, reload, loadSettingsFromDb],
   );
 
   return (
