@@ -12,7 +12,8 @@ import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { NextAnchorLine } from '../components/NextAnchorLine';
-import { IntentionLine, IntentionPrompt, useIntention } from '../components/Intention';
+import { router } from 'expo-router';
+import { intentionFrom } from '../lib/journal';
 import { useThemedStyles, type Theme } from '../theme';
 
 const SECTIONS: Section[] = ['morning', 'evening', 'week'];
@@ -21,7 +22,7 @@ const SECTIONS: Section[] = ['morning', 'evening', 'week'];
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { habits, idx, ctx, settings, ready } = useStore();
+  const { habits, idx, ctx, pages } = useStore();
   const [picked, setPicked] = useState<string | null>(null);
   // Follow "today" across midnight unless a past day is being viewed.
   const date = picked && picked < ctx.today ? picked : ctx.today;
@@ -30,14 +31,8 @@ export function TodayScreen() {
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const actions = useHabitActions(date);
 
-  // Morning intention: asked on the first open of each day (skippable), then shown at the top.
-  const intention = useIntention(date);
-  const todaysIntention = useIntention(ctx.today);
-  const [editingIntention, setEditingIntention] = useState(false);
-  // Only on opening the app (not the moment a first habit is added mid-session).
-  const [hadHabitsAtOpen] = useState(() => habits.length > 0);
-  const askToday = ready && hadHabitsAtOpen && settings.intentionAskedOn !== ctx.today && !todaysIntention;
-  const intentionOpen = editingIntention || askToday;
+  // The day's intention is simply the first line of that day's journal page, if it's short.
+  const intention = intentionFrom(pages[date]);
 
   const tracked = useMemo(() => habits.filter((h) => h.kind === 'habit'), [habits]);
   const ring = dayCompletion(habits, idx, ctx, date);
@@ -74,7 +69,11 @@ export function TodayScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
       >
-        <IntentionLine date={date} onEdit={() => setEditingIntention(true)} />
+        {intention && (
+          <Pressable onPress={() => router.push('/journal')} style={s.intention} accessibilityHint="Opens the journal">
+            <Text style={s.intentionText}>{intention}</Text>
+          </Pressable>
+        )}
         {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} />}
         {isToday && <Banners onStart={actions.startTimer} />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
@@ -112,15 +111,6 @@ export function TodayScreen() {
       </ScrollView>
 
       {actions.overlays}
-      {intentionOpen && (
-        <IntentionPrompt
-          key={`${date}-${intention ?? ''}`}
-          visible
-          date={editingIntention ? date : ctx.today}
-          initial={editingIntention ? (intention ?? '') : ''}
-          onClose={() => setEditingIntention(false)}
-        />
-      )}
     </View>
   );
 }
@@ -135,5 +125,7 @@ const makeStyles = (t: Theme) =>
     emptyText: { fontSize: 15, color: t.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 21 },
     emptyBtn: { marginTop: 20, backgroundColor: t.accent, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 },
     emptyBtnText: { color: t.onAccent, fontWeight: '600', fontSize: 16 },
+    intention: { marginTop: 10, paddingHorizontal: 4, paddingVertical: 4 },
+    intentionText: { fontSize: 18, fontWeight: '600', color: t.text, lineHeight: 24 },
     editHint: { textAlign: 'center', color: t.textMuted, fontSize: 13, marginTop: 16 },
   });

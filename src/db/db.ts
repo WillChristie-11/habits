@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
-import type { DayRecord, EntryType, Frequency, Habit, HabitInput, ItemKind, JournalEntry, Meta, RecordStatus, Section } from '../types';
+import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, JournalPage, Meta, RecordStatus, Section } from '../types';
+import { entryToLines } from '../lib/journal';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -8,7 +9,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -98,6 +99,40 @@ async function open() {
       );
       CREATE INDEX IF NOT EXISTS entries_by_date ON entries (date);
     `);
+  }
+  if (version < 7) {
+    // v7: the Journal becomes one free-form page per day. Anything written in v6's structured
+    // entries is folded into that day's page (intention first, so it stays the first line).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS pages (
+        date TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    const hasEntries = await db.getFirstAsync<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'entries'",
+    );
+    if (hasEntries?.n) {
+      const rows = await db.getAllAsync<{ type: string; date: string; data: string }>(
+        `SELECT type, date, data FROM entries
+         ORDER BY date, CASE type WHEN 'intention' THEN 0 WHEN 'reflection' THEN 1 WHEN 'weekly' THEN 2 ELSE 3 END, id`,
+      );
+      const byDate = new Map<string, string[]>();
+      for (const r of rows) {
+        const lines = entryToLines(r.type, r.data);
+        if (!lines.length) continue;
+        if (!byDate.has(r.date)) byDate.set(r.date, []);
+        byDate.get(r.date)!.push(...lines);
+      }
+      const now = new Date().toISOString();
+      await db.withTransactionAsync(async () => {
+        for (const [date, lines] of byDate) {
+          await db.runAsync('INSERT OR IGNORE INTO pages (date, text, updated_at) VALUES (?, ?, ?)', date, lines.join('\n'), now);
+        }
+        await db.execAsync('DROP TABLE entries;');
+      });
+    }
   }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
@@ -357,59 +392,23 @@ export async function saveSetting(key: string, value: string): Promise<void> {
 
 // --- Journal ------------------------------------------------------------------------------
 
-interface EntryRow extends Omit<JournalEntry, 'data'> {
-  data: string;
+export async function loadPages(): Promise<JournalPage[]> {
+  const db = await getDb();
+  return db.getAllAsync<JournalPage>('SELECT date, text, updated_at FROM pages ORDER BY date DESC');
 }
 
-export async function loadEntries(): Promise<JournalEntry[]> {
+/** Write a day's page; an empty page is removed so it doesn't appear in the date wheel. */
+export async function savePage(date: string, text: string): Promise<void> {
   const db = await getDb();
-  const rows = await db.getAllAsync<EntryRow>('SELECT * FROM entries ORDER BY date DESC, id DESC');
-  return rows.map((r) => {
-    let data: Record<string, string> = {};
-    try {
-      data = JSON.parse(r.data) ?? {};
-    } catch {}
-    return { ...r, data };
-  });
-}
-
-/**
- * One entry per (type, date, habit) for intentions, reflections and weekly reviews: writing again
- * updates it. Notes always add a new entry.
- */
-export async function saveEntry(type: EntryType, date: string, data: Record<string, string>, habitId: number | null = null) {
-  const db = await getDb();
-  const now = new Date().toISOString();
-  if (type !== 'note') {
-    const existing = await db.getFirstAsync<{ id: number }>(
-      'SELECT id FROM entries WHERE type = ? AND date = ? AND habit_id IS ?',
-      type,
-      date,
-      habitId,
-    );
-    if (existing) {
-      await db.runAsync('UPDATE entries SET data = ?, updated_at = ? WHERE id = ?', JSON.stringify(data), now, existing.id);
-      return existing.id;
-    }
+  if (!text.trim()) {
+    await db.runAsync('DELETE FROM pages WHERE date = ?', date);
+    return;
   }
-  const res = await db.runAsync(
-    'INSERT INTO entries (type, date, habit_id, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    type,
+  await db.runAsync(
+    `INSERT INTO pages (date, text, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (date) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`,
     date,
-    habitId,
-    JSON.stringify(data),
-    now,
-    now,
+    text,
+    new Date().toISOString(),
   );
-  return res.lastInsertRowId;
-}
-
-export async function deleteEntry(id: number) {
-  const db = await getDb();
-  await db.runAsync('DELETE FROM entries WHERE id = ?', id);
-}
-
-export async function updateEntry(id: number, data: Record<string, string>) {
-  const db = await getDb();
-  await db.runAsync('UPDATE entries SET data = ?, updated_at = ? WHERE id = ?', JSON.stringify(data), new Date().toISOString(), id);
 }

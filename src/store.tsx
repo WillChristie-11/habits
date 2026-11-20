@@ -4,7 +4,7 @@ import { AppearanceContext, DEFAULT_APPEARANCE, type Appearance } from './theme'
 import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { todayKey } from './lib/dates';
-import type { DayRecord, EntryType, Habit, HabitInput, JournalEntry, RecordStatus, ReminderSettings } from './types';
+import type { DayRecord, Habit, HabitInput, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
 
@@ -14,10 +14,6 @@ export interface Settings {
   reminders: ReminderSettings;
   /** notification taps already applied (so a replayed response isn't applied twice) */
   handledResponses: string[];
-  /** day the morning-intention prompt was last shown (answered or skipped) */
-  intentionAskedOn: string | null;
-  /** week (its Monday) whose resurfaced journal entry was dismissed */
-  resurfaceDismissedWeek: string | null;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -25,15 +21,14 @@ const DEFAULT_SETTINGS: Settings = {
   appearance: DEFAULT_APPEARANCE,
   reminders: DEFAULT_REMINDERS,
   handledResponses: [],
-  intentionAskedOn: null,
-  resurfaceDismissedWeek: null,
 };
 
 interface Store {
   ready: boolean;
   habits: Habit[];
   records: DayRecord[];
-  entries: JournalEntry[];
+  /** Journal pages by date. */
+  pages: Record<string, string>;
   idx: RecordIndex;
   ctx: Ctx;
   settings: Settings;
@@ -58,9 +53,8 @@ interface Store {
   /** "Later": remind again in 30 min */
   snooze(habitId: number, date: string): Promise<void>;
   dismissMorning(): Promise<void>;
-  saveEntry(type: EntryType, date: string, data: Record<string, string>, habitId?: number | null): Promise<void>;
-  deleteEntry(id: number): Promise<void>;
-  updateEntry(id: number, data: Record<string, string>): Promise<void>;
+  /** Updates the page in memory at once and writes it to the database. */
+  savePage(date: string, text: string): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -75,15 +69,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [records, setRecords] = useState<DayRecord[]>([]);
-  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [pages, setPages] = useState<Record<string, string>>({});
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, e] = await Promise.all([db.loadHabits(), db.loadRecords(), db.loadEntries()]);
+    const [h, r, p] = await Promise.all([db.loadHabits(), db.loadRecords(), db.loadPages()]);
     setHabits(h);
     setRecords(r);
-    setEntries(e);
+    setPages(Object.fromEntries(p.map((x) => [x.date, x.text])));
   }, []);
 
   useEffect(() => {
@@ -125,7 +119,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ready,
       habits,
       records,
-      entries,
+      pages,
       idx,
       ctx,
       settings,
@@ -200,17 +194,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setSettings((s) => ({ ...s, reminders: next }));
         await db.saveSetting('reminders', JSON.stringify(next));
       },
-      async saveEntry(type, date, data, habitId = null) {
-        await db.saveEntry(type, date, data, habitId);
-        setEntries(await db.loadEntries());
-      },
-      async updateEntry(id, data) {
-        await db.updateEntry(id, data);
-        setEntries(await db.loadEntries());
-      },
-      async deleteEntry(id) {
-        await db.deleteEntry(id);
-        setEntries(await db.loadEntries());
+      async savePage(date, text) {
+        if ((pages[date] ?? '') === (text.trim() ? text : '')) return;
+        setPages((p) => {
+          const next = { ...p };
+          if (text.trim()) next[date] = text;
+          else delete next[date];
+          return next;
+        });
+        await db.savePage(date, text);
       },
       async dismissMorning() {
         const next = { ...settings.reminders, morningDismissedOn: today };
@@ -218,7 +210,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await db.saveSetting('reminders', JSON.stringify(next));
       },
     }),
-    [ready, habits, records, entries, idx, ctx, settings, now, today, reload],
+    [ready, habits, records, pages, idx, ctx, settings, now, today, reload],
   );
 
   return (

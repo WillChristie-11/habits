@@ -1,306 +1,235 @@
-import React, { useMemo, useState } from 'react';
-import { ActionSheetIOS, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ScrollViewInstance,
+  type TextInputInstance,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import type { EntryType, Habit, JournalEntry } from '../types';
+import { router, useFocusEffect } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useStore } from '../store';
-import { ScreenHeader } from '../components/ScreenHeader';
-import { Button, Chip, Input } from '../components/ui';
-import { EntryEditor, ENTRY_LABELS } from '../components/journal/EntryEditor';
-import { useHabitActions } from '../components/useHabitActions';
-import { agoText, entryText, reflectionOpen, resurfaceFor, reviewDue, searchEntries } from '../lib/journal';
-import { dayCompletion, periodSummary } from '../lib/schedule';
-import { fromKey, prettyDate, weekDays, weekStart } from '../lib/dates';
-import { useThemedStyles, type Theme } from '../theme';
+import { pageDates, recapLines, weekCounts } from '../lib/journal';
+import { WEEKDAY_NAMES, fromKey, weekday } from '../lib/dates';
+import { useTheme, useThemedStyles, type Theme } from '../theme';
 
-type Filter = 'all' | EntryType;
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'intention', label: 'Intentions' },
-  { value: 'reflection', label: 'Reflections' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'note', label: 'Notes' },
-];
+const SAVE_DEBOUNCE_MS = 400;
 
 /**
- * Everything written, newest first: intentions, reflections, weekly reviews, notes to future me.
- * Private and optional: nothing here touches %, rings or flags.
+ * One free-form page per day. Opens on today's page with the keyboard up; today is editable
+ * until midnight, past pages are read-only. Nothing here is counted, flagged or reminded about.
  */
 export function JournalScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { habits, entries, idx, ctx, now, settings, updateSettings } = useStore();
-  const actions = useHabitActions();
-  const [filter, setFilter] = useState<Filter>('all');
-  const [query, setQuery] = useState('');
-  const [editing, setEditing] = useState<{ entry: JournalEntry | null; type: EntryType; date: string } | null>(null);
-  const [obstacleFrom, setObstacleFrom] = useState<string | null>(null);
+  const t = useTheme();
+  const { pages, ctx } = useStore();
+  const [picked, setPicked] = useState<string | null>(null);
+  const date = picked && picked < ctx.today ? picked : ctx.today; // follows midnight
+  const isToday = date === ctx.today;
+  const dates = pageDates(pages, ctx.today);
+  const editor = useRef<TextInputInstance>(null);
 
-  const list = useMemo(() => {
-    const byType = filter === 'all' ? entries : entries.filter((e) => e.type === filter);
-    return searchEntries(byType, query, habits);
-  }, [entries, filter, query, habits]);
-
-  // Group by day, newest first.
-  const groups: { date: string; items: JournalEntry[] }[] = [];
-  for (const e of list) {
-    const g = groups.at(-1);
-    if (g && g.date === e.date) g.items.push(e);
-    else groups.push({ date: e.date, items: [e] });
-  }
-
-  const due = reviewDue(entries, ctx, now);
-  const reflectedToday = entries.some((e) => e.type === 'reflection' && e.date === ctx.today);
-  const showReflection = reflectionOpen(settings.reminders, now) && !reflectedToday;
-  const thisWeek = weekStart(ctx.today);
-  const resurfaced = settings.resurfaceDismissedWeek === thisWeek ? null : resurfaceFor(entries, ctx.today);
-  const tracked = habits.filter((h) => h.kind === 'habit');
-
-  const open = (e: JournalEntry) => {
-    if (e.type === 'weekly') router.push({ pathname: '/review', params: { sunday: e.date } });
-    else setEditing({ entry: e, type: e.type, date: e.date });
-  };
-
-  const addEntry = () => {
-    const choose = (i: number) => {
-      if (i === 0) setEditing({ entry: null, type: 'note', date: ctx.today });
-      if (i === 1) {
-        const existing = entries.find((e) => e.type === 'reflection' && e.date === ctx.today) ?? null;
-        setEditing({ entry: existing, type: 'reflection', date: ctx.today });
-      }
-    };
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { options: ['Note to future me', 'Reflection for today', 'Cancel'], cancelButtonIndex: 2 },
-        choose,
-      );
-    } else choose(0);
-  };
-
-  // "Make this an obstacle plan": pick the habit, then open its form with the obstacle prefilled.
-  const makeObstacle = (text: string) => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: 'Make this an obstacle plan for…', options: [...tracked.map((h) => h.name), 'Cancel'], cancelButtonIndex: tracked.length },
-        (i) => i < tracked.length && actions.openForm(tracked[i], 'habit', text),
-      );
-    } else setObstacleFrom(text);
-  };
-
-  const stat = (e: JournalEntry) => {
-    if (e.type === 'weekly') {
-      const p = periodSummary(habits, idx, weekDays(e.date), ctx).pct;
-      return p == null ? null : `${Math.round(p * 100)}% week`;
-    }
-    if (e.type === 'note') return e.habit_id != null ? (habits.find((h) => h.id === e.habit_id)?.name ?? null) : null;
-    const c = dayCompletion(habits, idx, ctx, e.date);
-    return c.total ? `${c.done}/${c.total} done` : null;
-  };
+  // Opening the tab: back to today with the keyboard ready.
+  useFocusEffect(
+    useCallback(() => {
+      setPicked(null);
+      const id = setTimeout(() => editor.current?.focus(), 250);
+      return () => clearTimeout(id);
+    }, []),
+  );
 
   return (
-    <View style={[s.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader
-        dateLine={now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-        title="Journal"
-        onAdd={addEntry}
-        addLabel="Entry"
-      />
-      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-        {resurfaced && (
-          <View style={s.resurface}>
-            <View style={s.cardHead}>
-              <Text style={s.kicker}>{agoText(resurfaced.date, ctx.today)} you wrote</Text>
-              <Pressable onPress={() => updateSettings({ resurfaceDismissedWeek: thisWeek })} hitSlop={10}>
-                <Text style={s.x}>✕</Text>
-              </Pressable>
-            </View>
-            <Pressable onPress={() => open(resurfaced)}>
-              <Text style={s.resurfaceText}>“{entryText(resurfaced)}”</Text>
-            </Pressable>
-          </View>
-        )}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={[s.screen, { paddingTop: insets.top }]}
+    >
+      <DateStrip dates={dates} selected={date} today={ctx.today} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />
 
-        {due && (
-          <Pressable style={s.reviewCard} onPress={() => router.push({ pathname: '/review', params: { sunday: due } })}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.kicker}>Weekly review</Text>
-              <Text style={s.cardTitle}>Look back at {weekRange(due)}</Text>
-              <Text style={s.cardSub}>Three questions and a note for next week. A few minutes.</Text>
-            </View>
-            <Text style={s.chev}>›</Text>
-          </Pressable>
-        )}
+      <View style={s.head}>
+        <Text style={s.date}>
+          {fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+        </Text>
+        <Pressable onPress={() => router.push('/settings')} hitSlop={12} accessibilityLabel="Settings">
+          <SymbolView name="gearshape" size={22} tintColor={t.textMuted} fallback={<Text style={s.gear}>⚙︎</Text>} />
+        </Pressable>
+      </View>
 
-        {showReflection && <ReflectionCard key={ctx.today} />}
+      {weekday(date) === 0 && <SundayRecap sunday={date} />}
 
-        <View style={s.filters}>
-          {FILTERS.map((f) => (
-            <Chip key={f.value} label={f.label} active={filter === f.value} onPress={() => setFilter(f.value)} />
-          ))}
-        </View>
-        <Input value={query} onChangeText={setQuery} placeholder="Search" returnKeyType="search" clearButtonMode="while-editing" />
-
-        {groups.length === 0 && (
-          <Text style={s.empty}>
-            {entries.length
-              ? 'Nothing matches.'
-              : 'Nothing here yet. Your morning intentions, evening reflections and weekly reviews collect here.'}
+      {isToday ? (
+        <TodayPage key={date} date={date} inputRef={editor} />
+      ) : (
+        <ScrollView contentContainerStyle={s.pastWrap}>
+          <Text style={s.pastText} selectable>
+            {pages[date]}
           </Text>
-        )}
-
-        {groups.map((g) => (
-          <View key={g.date} style={{ marginTop: 18 }}>
-            <Text style={s.day}>{dayLabel(g.date, ctx.today)}</Text>
-            {g.items.map((e) => {
-              const st = stat(e);
-              return (
-                <Pressable key={e.id} style={s.entry} onPress={() => open(e)}>
-                  <View style={s.entryHead}>
-                    <Text style={s.type}>{ENTRY_LABELS[e.type]}</Text>
-                    {st && <Text style={s.stat}>{st}</Text>}
-                  </View>
-                  {e.type === 'reflection' ? (
-                    <>
-                      {!!e.data.wentWell && <Text style={s.body}>✓ {e.data.wentWell}</Text>}
-                      {!!e.data.inTheWay && <Text style={s.body}>↯ {e.data.inTheWay}</Text>}
-                      {!!e.data.inTheWay && tracked.length > 0 && (
-                        <Pressable onPress={() => makeObstacle(e.data.inTheWay)} hitSlop={6}>
-                          <Text style={s.link}>Make this an obstacle plan</Text>
-                        </Pressable>
-                      )}
-                    </>
-                  ) : e.type === 'weekly' ? (
-                    <>
-                      {!!e.data.liked && <Text style={s.body}>Liked: {e.data.liked}</Text>}
-                      {!!e.data.didntWork && <Text style={s.body}>Didn’t work: {e.data.didntWork}</Text>}
-                      {!!e.data.changes && <Text style={s.body}>Next week: {e.data.changes}</Text>}
-                    </>
-                  ) : (
-                    <Text style={s.body}>{e.data.text}</Text>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-        ))}
-      </ScrollView>
-
-      {editing && (
-        <EntryEditor entry={editing.entry} type={editing.type} date={editing.date} onClose={() => setEditing(null)} />
+        </ScrollView>
       )}
-      {obstacleFrom != null && (
-        <HabitPicker
-          habits={tracked}
-          onPick={(h) => {
-            const text = obstacleFrom;
-            setObstacleFrom(null);
-            setTimeout(() => actions.openForm(h, 'habit', text), 300);
-          }}
-          onClose={() => setObstacleFrom(null)}
-        />
-      )}
-      {actions.overlays}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
-/** Today's two-line reflection, offered once the evening nudge starts. Never counted. */
-function ReflectionCard() {
+/** Today's page: plain text, saved as you type. */
+function TodayPage({ date, inputRef }: { date: string; inputRef: React.RefObject<TextInputInstance | null> }) {
   const s = useThemedStyles(makeStyles);
-  const { ctx, saveEntry } = useStore();
-  const [wentWell, setWentWell] = useState('');
-  const [inTheWay, setInTheWay] = useState('');
-  const can = !!(wentWell.trim() || inTheWay.trim());
+  const t = useTheme();
+  const { pages, savePage } = useStore();
+  const [text, setText] = useState(pages[date] ?? '');
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latest = useRef(text);
+  const saved = useRef(text);
+  // savePage changes identity whenever pages change; keep the latest in a ref so flush is stable.
+  const save = useRef(savePage);
+  useEffect(() => {
+    save.current = savePage;
+  }, [savePage]);
+
+  const flush = useCallback(() => {
+    if (pending.current) clearTimeout(pending.current);
+    pending.current = null;
+    if (latest.current === saved.current) return;
+    saved.current = latest.current;
+    save.current(date, latest.current);
+  }, [date]);
+
+  // Save whatever is left when leaving the page.
+  useEffect(() => () => flush(), [flush]);
+
   return (
-    <View style={s.reflect}>
-      <Text style={s.kicker}>Tonight</Text>
-      <Text style={s.cardTitle}>How did today go?</Text>
-      <Input value={wentWell} onChangeText={setWentWell} placeholder="What went well?" style={s.reflectInput} />
-      <Input value={inTheWay} onChangeText={setInTheWay} placeholder="What got in the way?" style={s.reflectInput} />
-      <View style={{ marginTop: 4 }}>
-        <Button
-          title="Save reflection"
-          disabled={!can}
-          onPress={() => saveEntry('reflection', ctx.today, { wentWell: wentWell.trim(), inTheWay: inTheWay.trim() })}
-        />
-      </View>
-    </View>
+    <TextInput
+      ref={inputRef}
+      style={s.page}
+      value={text}
+      onChangeText={(v) => {
+        setText(v);
+        latest.current = v;
+        if (pending.current) clearTimeout(pending.current);
+        pending.current = setTimeout(flush, SAVE_DEBOUNCE_MS);
+      }}
+      onBlur={flush}
+      multiline
+      textAlignVertical="top"
+      placeholder="Today is for…"
+      placeholderTextColor={t.textMuted}
+      keyboardAppearance={t.dark ? 'dark' : 'light'}
+      scrollEnabled
+      autoCorrect
+    />
   );
 }
 
-function HabitPicker({ habits, onPick, onClose }: { habits: Habit[]; onPick(h: Habit): void; onClose(): void }) {
+/** Days that have a page, plus today. Newest on the right; tap to read a past day. */
+function DateStrip({
+  dates,
+  selected,
+  today,
+  onSelect,
+}: {
+  dates: string[];
+  selected: string;
+  today: string;
+  onSelect(d: string): void;
+}) {
   const s = useThemedStyles(makeStyles);
+  const scroller = useRef<ScrollViewInstance>(null);
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={s.scrim} onPress={onClose} />
-      <View style={s.picker}>
-        <Text style={s.cardTitle}>Make this an obstacle plan for…</Text>
-        {habits.map((h) => (
-          <Pressable key={h.id} style={s.pickRow} onPress={() => onPick(h)}>
-            <Text style={s.body}>{h.name}</Text>
+    <ScrollView
+      ref={scroller}
+      horizontal
+      style={{ flexGrow: 0 }}
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={s.strip}
+      onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: false })}
+    >
+      {dates.map((d, i) => {
+        const day = fromKey(d);
+        const newMonth = i === 0 || fromKey(dates[i - 1]).getMonth() !== day.getMonth();
+        const active = d === selected;
+        return (
+          <Pressable
+            key={d}
+            onPress={() => onSelect(d)}
+            style={[s.pill, active && s.pillActive]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={day.toDateString()}
+          >
+            <Text style={[s.pillTop, active && s.pillTextActive]}>
+              {newMonth ? day.toLocaleDateString(undefined, { month: 'short' }) : WEEKDAY_NAMES[weekday(d)]}
+            </Text>
+            <Text style={[s.pillNum, active && s.pillTextActive]}>{d === today ? 'Today' : day.getDate()}</Text>
           </Pressable>
-        ))}
-      </View>
-    </Modal>
+        );
+      })}
+    </ScrollView>
   );
 }
 
-function weekRange(sunday: string): string {
-  const days = weekDays(sunday);
-  const a = fromKey(days[0]);
-  const b = fromKey(days[6]);
-  const m = (d: Date) => d.toLocaleDateString(undefined, { month: 'short' });
-  return a.getMonth() === b.getMonth() ? `${m(a)} ${a.getDate()}–${b.getDate()}` : `${m(a)} ${a.getDate()} – ${m(b)} ${b.getDate()}`;
-}
-
-function dayLabel(date: string, today: string): string {
-  if (date === today) return 'Today';
-  return prettyDate(date);
+/** Sundays: what I did this week (counts only) and the first line of each page Mon–Sat. */
+function SundayRecap({ sunday }: { sunday: string }) {
+  const s = useThemedStyles(makeStyles);
+  const { habits, idx, ctx, pages } = useStore();
+  const counts = weekCounts(habits, idx, ctx, sunday);
+  const lines = recapLines(pages, sunday);
+  if (!counts.length && !lines.length) return null;
+  return (
+    <View style={s.recap}>
+      <Text style={s.recapLabel}>This week</Text>
+      {counts.length > 0 && <Text style={s.recapCounts}>{counts.map((c) => c.text).join(' · ')}</Text>}
+      {lines.map((l) => (
+        <Text key={l.date} style={s.recapLine} numberOfLines={2}>
+          <Text style={s.recapDay}>{WEEKDAY_NAMES[weekday(l.date)]} </Text>
+          {l.line}
+        </Text>
+      ))}
+      <Pressable onPress={() => router.push('/')} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: 6 }}>
+        <Text style={s.recapLink}>Adjust habits</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: t.background },
-    content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 120 },
-    kicker: { fontSize: 12, fontWeight: '700', color: t.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
-    cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    cardTitle: { fontSize: 18, fontWeight: '700', color: t.text, marginTop: 2 },
-    cardSub: { fontSize: 13, color: t.textMuted, marginTop: 2 },
-    x: { fontSize: 14, color: t.textMuted },
-    chev: { fontSize: 28, color: t.accent, marginLeft: 8 },
-    resurface: { backgroundColor: t.accentSoft, borderRadius: 14, padding: 14, marginBottom: 12 },
-    resurfaceText: { fontSize: 16, color: t.text, marginTop: 6, lineHeight: 22, fontStyle: 'italic' },
-    reviewCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
+    strip: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+    pill: { alignItems: 'center', minWidth: 48, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 12 },
+    pillActive: { backgroundColor: t.accent },
+    pillTop: { fontSize: 11, fontWeight: '600', color: t.textMuted },
+    pillNum: { fontSize: 15, fontWeight: '700', color: t.text, marginTop: 1 },
+    pillTextActive: { color: t.onAccent },
+    head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 },
+    date: { fontSize: 20, fontWeight: '700', color: t.text },
+    gear: { fontSize: 20, color: t.textMuted },
+    page: {
+      flex: 1,
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      paddingBottom: 24,
+      fontSize: 17,
+      lineHeight: 25,
+      color: t.text,
+    },
+    pastWrap: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 60 },
+    pastText: { fontSize: 17, lineHeight: 25, color: t.text },
+    recap: {
+      marginHorizontal: 16,
+      marginTop: 10,
+      padding: 12,
+      borderRadius: 12,
       backgroundColor: t.surface,
-      borderRadius: 14,
-      padding: 14,
-      marginBottom: 12,
-      borderWidth: 1.5,
-      borderColor: t.accent,
+      gap: 3,
     },
-    reflect: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginBottom: 12, gap: 8 },
-    reflectInput: { backgroundColor: t.background },
-    filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6, marginBottom: 10 },
-    empty: { fontSize: 15, color: t.textMuted, textAlign: 'center', marginTop: 32, lineHeight: 21, paddingHorizontal: 12 },
-    day: { fontSize: 13, fontWeight: '700', color: t.textMuted, marginBottom: 8, marginLeft: 4 },
-    entry: { backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8, gap: 4 },
-    entryHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    type: { fontSize: 12, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 },
-    stat: { fontSize: 12, color: t.textMuted, fontVariant: ['tabular-nums'] },
-    body: { fontSize: 15, color: t.text, lineHeight: 21 },
-    link: { fontSize: 13, color: t.accent, fontWeight: '600', marginTop: 4 },
-    scrim: { flex: 1, backgroundColor: t.scrim },
-    picker: {
-      position: 'absolute',
-      left: 16,
-      right: 16,
-      top: '25%',
-      backgroundColor: t.background,
-      borderRadius: 16,
-      padding: 16,
-      gap: 4,
-    },
-    pickRow: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border },
+    recapLabel: { fontSize: 11, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+    recapCounts: { fontSize: 14, color: t.text, fontWeight: '600', lineHeight: 20, marginBottom: 2 },
+    recapLine: { fontSize: 13, color: t.textMuted, lineHeight: 18 },
+    recapDay: { fontWeight: '700', color: t.text },
+    recapLink: { fontSize: 13, color: t.accent, fontWeight: '600' },
   });

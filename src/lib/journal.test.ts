@@ -1,10 +1,9 @@
 /// <reference types="node" />
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { DayRecord, Frequency, Habit, JournalEntry } from '../types';
-import { DEFAULT_REMINDERS } from '../types';
+import type { DayRecord, Frequency, Habit } from '../types';
 import { indexRecords } from './schedule';
-import { agoText, noteFor, noteTrigger, reflectionOpen, resurfaceFor, reviewDue, searchEntries, weekReview } from './journal';
+import { entryToLines, firstLine, intentionFrom, pageDates, recapLines, weekCounts } from './journal';
 
 const SUN = '2026-11-22';
 let nextId = 1;
@@ -39,100 +38,63 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     ...extra,
   };
 }
-const rec = (h: Habit, date: string, feeling: number | null = null, status: DayRecord['status'] = 'done'): DayRecord => ({
+const rec = (h: Habit, date: string, status: DayRecord['status'] = 'done'): DayRecord => ({
   habit_id: h.id,
   date,
   status,
-  feeling,
+  feeling: null,
   timestamp: date + 'T09:00:00',
   meta: null,
 });
-let entryId = 1;
-const entry = (type: JournalEntry['type'], date: string, data: Record<string, string>, habitId: number | null = null): JournalEntry => ({
-  id: entryId++,
-  type,
-  date,
-  habit_id: habitId,
-  data,
-  created_at: date,
-  updated_at: date,
-});
-const daily: Frequency = { type: 'daily' };
-const at = (day: string, hm: string) => new Date(`${day}T${hm}:00`);
 
-test('weekly review: % per habit, best feeling, most missed (want habits only)', () => {
-  const med = habit(daily, { name: 'Meditate' });
-  const read = habit(daily, { name: 'Read' });
-  const apply = habit(daily, { name: 'Apply', habit_kind: 'avoid' });
-  const week = ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22'];
+test('first line under ~80 characters is the day intention', () => {
+  assert.equal(firstLine('\n  Ship the CV  \nthen rest'), 'Ship the CV');
+  assert.equal(intentionFrom('Ship the CV\nmore words'), 'Ship the CV');
+  assert.equal(intentionFrom('x'.repeat(81)), null);
+  assert.equal(intentionFrom('x'.repeat(80)), 'x'.repeat(80));
+  assert.equal(intentionFrom('   \n  '), null);
+  assert.equal(intentionFrom(undefined), null);
+});
+
+test('date wheel: only days with writing, plus today, oldest first', () => {
+  const pages = { '2026-11-10': 'a', '2026-11-12': '   ', '2026-11-18': 'b', '2026-11-25': 'future?' };
+  assert.deepEqual(pageDates(pages, '2026-11-20'), ['2026-11-10', '2026-11-18', '2026-11-20']);
+});
+
+test('Sunday recap: counts only, nothing for habits not done, avoid habits as sessions', () => {
+  const read = habit({ type: 'daily' }, { name: 'Read' });
+  const lift = habit({ type: 'weekly_count', count: 3 }, { name: 'Lifted' });
+  const apply = habit({ type: 'daily' }, { name: 'job-search', habit_kind: 'avoid' });
+  const floss = habit({ type: 'daily' }, { name: 'Floss' });
+  const anchor = habit({ type: 'daily' }, { kind: 'anchor', name: 'Wake up' });
   const recs = [
-    ...week.map((d) => rec(med, d, 4)),
-    rec(read, '2026-11-16', 5),
-    rec(read, '2026-11-17', 5),
+    ...['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20'].map((d) => rec(read, d)),
+    rec(lift, '2026-11-17'),
+    rec(lift, '2026-11-20'),
+    ...['2026-11-16', '2026-11-18', '2026-11-19', '2026-11-21'].map((d) => rec(apply, d)),
+    rec(anchor, '2026-11-16'),
+    rec(floss, '2026-11-18', 'skipped'),
   ];
-  const r = weekReview([med, read, apply], indexRecords(recs), { today: '2026-11-23' }, SUN);
-  const row = (h: Habit) => r.rows.find((x) => x.habit.id === h.id)!;
-  assert.equal(row(med).pct, 1);
-  assert.equal(row(read).missed, 5);
-  assert.equal(row(apply).pct, null); // avoid: no %
-  assert.equal(r.best!.habit.name, 'Read'); // avg 5 over 2 ratings beats 4
-  assert.equal(r.mostMissed!.habit.name, 'Read'); // apply missed more days but is an avoid habit
-  assert.equal(r.pct, 9 / 14);
+  const counts = weekCounts([read, lift, apply, floss, anchor], indexRecords(recs), { today: SUN }, SUN);
+  assert.deepEqual(
+    counts.map((c) => c.text),
+    ['Read 5×', '4 job-search sessions', 'Lifted 2×'],
+  );
+  // mid-week: only days up to today
+  assert.equal(weekCounts([read], indexRecords(recs), { today: '2026-11-17' }, SUN)[0].text, 'Read 2×');
 });
 
-test('review is due Sunday from 5 PM and all Monday, until written', () => {
-  assert.equal(reviewDue([], { today: SUN }, at(SUN, '16:59')), null);
-  assert.equal(reviewDue([], { today: SUN }, at(SUN, '17:00')), SUN);
-  assert.equal(reviewDue([], { today: '2026-11-23' }, at('2026-11-23', '09:00')), SUN);
-  assert.equal(reviewDue([], { today: '2026-11-24' }, at('2026-11-24', '09:00')), null);
-  assert.equal(reviewDue([entry('weekly', SUN, { liked: 'x' })], { today: SUN }, at(SUN, '18:00')), null);
+test('Sunday recap: first line of each page Mon–Sat', () => {
+  const pages = { '2026-11-16': 'Monday thing\nmore', '2026-11-19': '\nThursday', '2026-11-22': 'Sunday itself', '2026-11-15': 'last week' };
+  assert.deepEqual(recapLines(pages, SUN), [
+    { date: '2026-11-16', line: 'Monday thing' },
+    { date: '2026-11-19', line: 'Thursday' },
+  ]);
 });
 
-test('reflection opens with the evening nudge', () => {
-  assert.equal(reflectionOpen(DEFAULT_REMINDERS, at(SUN, '19:59')), false);
-  assert.equal(reflectionOpen(DEFAULT_REMINDERS, at(SUN, '20:00')), true);
-});
-
-test('resurfacing picks the entry closest to 4 weeks old, at least 3 weeks old, stable all week', () => {
-  const es = [
-    entry('reflection', '2026-11-10', { wentWell: 'too recent' }),
-    entry('intention', '2026-10-20', { text: 'four weeks' }),
-    entry('intention', '2026-09-01', { text: 'long ago' }),
-    entry('intention', '2026-10-21', { text: '' }),
-  ];
-  assert.equal(resurfaceFor(es, '2026-11-19')!.data.text, 'four weeks');
-  assert.equal(resurfaceFor(es, '2026-11-22')!.data.text, 'four weeks'); // same week, same pick
-  assert.equal(resurfaceFor([es[0]], '2026-11-19'), null);
-  assert.equal(agoText('2026-10-20', '2026-11-19'), '4 weeks ago');
-});
-
-test('search covers all fields and the habit a note is about', () => {
-  const h = habit(daily, { name: 'Guitar' });
-  const es = [entry('reflection', SUN, { wentWell: 'slept well', inTheWay: 'late meeting' }), entry('note', SUN, { text: 'just tune it' }, h.id)];
-  assert.equal(searchEntries(es, 'MEETING').length, 1);
-  assert.equal(searchEntries(es, 'guitar', [h]).length, 1);
-  assert.equal(searchEntries(es, '  ').length, 2);
-});
-
-test('notes to future me: want habits on never-miss-twice, avoid habits after 2+ days without a session', () => {
-  const want = habit(daily, { name: 'Read' });
-  const avoid = habit(daily, { name: 'Apply', habit_kind: 'avoid' });
-  const ctx = { today: '2026-11-19' };
-  // want: missed the 18th → trigger today
-  assert.equal(noteTrigger(want, indexRecords([rec(want, '2026-11-17')]), ctx), true);
-  assert.equal(noteTrigger(want, indexRecords([rec(want, '2026-11-18')]), ctx), false);
-  // avoid: last session the 16th → 17th and 18th empty → trigger on the 19th; last on the 17th → not yet
-  assert.equal(noteTrigger(avoid, indexRecords([rec(avoid, '2026-11-16')]), ctx), true);
-  assert.equal(noteTrigger(avoid, indexRecords([rec(avoid, '2026-11-17')]), ctx), false);
-
-  const note = entry('note', '2026-11-15', { text: 'Just open the laptop.' }, avoid.id);
-  const idx = indexRecords([rec(avoid, '2026-11-16')]);
-  assert.equal(noteFor(avoid, [note], idx, ctx)!.data.text, 'Just open the laptop.');
-  // delivered on the 19th → shown that day only
-  const delivered = { ...note, data: { ...note.data, triggeredOn: '2026-11-19' } };
-  assert.ok(noteFor(avoid, [delivered], idx, ctx));
-  assert.equal(noteFor(avoid, [delivered], idx, { today: '2026-11-20' }), null);
-  // never on the day it was written, even if the habit has already slipped
-  const sameDay = entry('note', '2026-11-19', { text: 'x' }, avoid.id);
-  assert.equal(noteFor(avoid, [sameDay], idx, ctx), null);
+test('old structured entries fold into plain page lines (v7 migration)', () => {
+  assert.deepEqual(entryToLines('intention', '{"text":"Ship it"}'), ['Ship it']);
+  assert.deepEqual(entryToLines('reflection', '{"wentWell":"walk","inTheWay":""}'), ['Went well: walk']);
+  assert.deepEqual(entryToLines('weekly', '{"liked":"a","changes":"c"}'), ['Liked this week: a', 'Next week: c']);
+  assert.deepEqual(entryToLines('note', 'not json'), []);
 });

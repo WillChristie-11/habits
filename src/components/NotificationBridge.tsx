@@ -3,7 +3,6 @@ import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
 import { planNotifications } from '../lib/reminders';
-import { noteFor } from '../lib/journal';
 import { initNotifications, listenForResponses, requestPermission, syncNotifications, type ItemResponse } from '../lib/notifications';
 
 const SYNC_DEBOUNCE_MS = 400;
@@ -15,7 +14,7 @@ const SYNC_DEBOUNCE_MS = 400;
  */
 export function NotificationBridge() {
   const store = useStore();
-  const { habits, records, entries, idx, ctx, settings, updateEntry } = store;
+  const { habits, records, idx, ctx, settings } = store;
   const [foregroundTick, setForegroundTick] = useState(0);
 
   // Latest store for the response listener, which is registered once.
@@ -33,11 +32,6 @@ export function NotificationBridge() {
       handled.add(r.key);
       const s = storeRef.current;
       await s.updateSettings({ handledResponses: [...handled].slice(-40) });
-      // Tapping the evening nudge opens the Journal, where today's reflection is offered.
-      if (r.action === 'open' && r.type === 'evening') {
-        router.push('/journal');
-        return;
-      }
       if (r.habitId == null || !r.date) return;
       if (!s.habits.some((h) => h.id === r.habitId)) return;
       if (r.action === 'done') await s.mark(r.habitId, 'done', r.date);
@@ -67,21 +61,13 @@ export function NotificationBridge() {
     if (wantsReminders) requestPermission();
   }, [wantsReminders]);
 
-  // A note to future me is delivered once: mark it on the first day its trigger fires.
-  useEffect(() => {
-    for (const h of habits) {
-      const n = noteFor(h, entries, idx, ctx);
-      if (n && !n.data.triggeredOn) updateEntry(n.id, { ...n.data, triggeredOn: ctx.today });
-    }
-  }, [habits, entries, idx, ctx, updateEntry]);
-
   // Debounced re-plan + reschedule.
   useEffect(() => {
     const t = setTimeout(() => {
-      syncNotifications(planNotifications(habits, idx, ctx, settings.reminders, new Date(), entries));
+      syncNotifications(planNotifications(habits, idx, ctx, settings.reminders, new Date()));
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [habits, records, entries, idx, ctx, settings.reminders, foregroundTick]);
+  }, [habits, records, idx, ctx, settings.reminders, foregroundTick]);
 
   return null;
 }

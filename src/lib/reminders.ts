@@ -1,7 +1,6 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
-import type { Habit, JournalEntry, ReminderSettings } from '../types';
-import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays, weekday } from './dates';
-import { noteFor } from './journal';
+import type { Habit, ReminderSettings } from '../types';
+import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from './dates';
 import {
   missedTwiceRisk,
   onTimeline,
@@ -233,14 +232,8 @@ export function planNotifications(
   ctx: Ctx,
   r: ReminderSettings,
   now: Date,
-  entries: JournalEntry[] = [],
 ): PlannedNotification[] {
   const out: PlannedNotification[] = [];
-  // A note to future me, on the day it's due (never-miss-twice / 2+ days without a session).
-  const pastYou = (h: Habit, date: string) => {
-    const n = noteFor(h, entries, idx, ctx, date);
-    return n ? `Past you: “${n.data.text.trim()}”` : null;
-  };
   const days = [ctx.today, addDays(ctx.today, 1)];
   const future = (d: Date) => d.getTime() > now.getTime() + 5_000;
 
@@ -257,9 +250,7 @@ export function planNotifications(
         id: `item-${h.id}-${date}`,
         at,
         title: isAvoid(h) ? avoidLine(h) : h.name,
-        body:
-          pastYou(h, date) ??
-          (isAvoid(h) ? avoidBody(h, h.remind_before, date, r.messages) : itemBody(h, h.remind_before, date, r.messages)),
+        body: isAvoid(h) ? avoidBody(h, h.remind_before, date, r.messages) : itemBody(h, h.remind_before, date, r.messages),
         category: itemCategory(h),
         data: { type: 'item', habitId: h.id, date },
       });
@@ -295,23 +286,17 @@ export function planNotifications(
         const names = left.map((x) => (x.flagged ? `${x.habit.name} ⚑` : x.habit.name));
         const first = left[0]?.habit;
         const minimum = first?.minimum_version ? ` Minimum for ${first.name}: ${first.minimum_version}.` : '';
-        const note = first ? pastYou(first, date) : null;
-        const msg = note ?? (first ? pickMessage(first, date, r.messages) : null);
+        const msg = first ? pickMessage(first, date, r.messages) : null;
         const counted = left.length ? `${list(names)}.${minimum}` : '';
         // Avoid habits: listed as "15 min of <habit>", never in the count.
-        const avoidLines = av.map((h) => {
-          const n = pastYou(h, date);
-          return n ? `${avoidLine(h, 'of')} · ${n}` : avoidLine(h, 'of');
-        });
-        // Sunday evening: point to the weekly review.
-        const reviewLine = weekday(date) === 0 ? 'Your weekly review is ready in Journal.' : null;
+        const avoidLines = av.map((h) => avoidLine(h, 'of'));
         out.push({
           id: `evening-${date}`,
           at,
           title: left.length
             ? `${left.length} left · 2 h until ${formatTime(r.eveningDeadline)}`
             : `Still time for ${avoidLines[0]}`,
-          body: [counted, ...(left.length ? avoidLines : avoidLines.slice(1)), ...(msg ? [msg] : []), ...(reviewLine ? [reviewLine] : [])]
+          body: [counted, ...(left.length ? avoidLines : avoidLines.slice(1)), ...(msg ? [msg] : [])]
             .filter(Boolean)
             .join('\n'),
           category: null,
