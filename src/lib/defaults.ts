@@ -2,10 +2,9 @@ import type { HabitInput } from '../types';
 
 /** Anchors a brand-new install starts with. All editable and deletable. */
 export function defaultAnchors(): HabitInput[] {
-  const anchor = (name: string, time: string, end: string | null, section: 'morning' | 'evening'): HabitInput => ({
+  const anchor = (name: string, time: string, end: string | null): HabitInput => ({
     kind: 'anchor',
     name,
-    section,
     why: null,
     minimum_version: null,
     messages: [],
@@ -29,11 +28,7 @@ export function defaultAnchors(): HabitInput[] {
     remind_before: 0,
     meta: null,
   });
-  return [
-    anchor('Wake up', '07:00', null, 'morning'),
-    anchor('Work block', '09:00', '17:00', 'morning'),
-    anchor('Wind down', '21:30', null, 'evening'),
-  ];
+  return [anchor('Wake up', '07:00', null), anchor('Work block', '09:00', '17:00'), anchor('Wind down', '21:30', null)];
 }
 
 /** "Get ready" countdown lengths offered per item, in minutes. */

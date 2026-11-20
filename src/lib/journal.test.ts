@@ -12,7 +12,6 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     id: nextId++,
     kind: 'habit',
     name: `h${nextId}`,
-    section: 'morning',
     why: null,
     minimum_version: null,
     messages: [],
@@ -85,7 +84,12 @@ test('Sunday recap: counts only, nothing for habits not done, avoid habits as se
 });
 
 test('Sunday recap: first line of each page Mon–Sat', () => {
-  const pages = { '2026-11-16': 'Monday thing\nmore', '2026-11-19': '\nThursday', '2026-11-22': 'Sunday itself', '2026-11-15': 'last week' };
+  const pages = {
+    '2026-11-16': 'Monday thing\nmore',
+    '2026-11-19': '\nThursday',
+    '2026-11-22': 'Sunday itself',
+    '2026-11-15': 'last week',
+  };
   assert.deepEqual(recapLines(pages, SUN), [
     { date: '2026-11-16', line: 'Monday thing' },
     { date: '2026-11-19', line: 'Thursday' },
@@ -103,8 +107,17 @@ test('Sunday recap: activities show count, total and their soft target; never a 
   const run = habit({ type: 'daily' }, { kind: 'activity', name: 'Run', unit: 'mi', target_min: 2, target_max: 3 });
   const bike = habit({ type: 'daily' }, { kind: 'activity', name: 'Bike', unit: 'min' });
   const swim = habit({ type: 'daily' }, { kind: 'activity', name: 'Swim', unit: null });
-  const log = (h: Habit, d: string, amount?: number) => ({ ...rec(h, d), meta: { type: h.name.toLowerCase(), amount: amount ?? null, unit: h.unit } });
-  const idx = indexRecords([log(run, '2026-11-16', 4), log(run, '2026-11-18', 6.5), log(run, '2026-11-20', 3.5), log(bike, '2026-11-17', 45), log(swim, '2026-11-19')]);
+  const log = (h: Habit, d: string, amount?: number) => ({
+    ...rec(h, d),
+    meta: { type: h.name.toLowerCase(), amount: amount ?? null, unit: h.unit },
+  });
+  const idx = indexRecords([
+    log(run, '2026-11-16', 4),
+    log(run, '2026-11-18', 6.5),
+    log(run, '2026-11-20', 3.5),
+    log(bike, '2026-11-17', 45),
+    log(swim, '2026-11-19'),
+  ]);
   assert.deepEqual(
     weekCounts([run, bike, swim], idx, { today: SUN }, SUN).map((c) => c.text),
     ['Run 3× · 14 mi · you usually aim for 2–3', 'Bike 1× · 45 min', 'Swim 1×'],

@@ -1,4 +1,5 @@
-export type Section = 'morning' | 'evening' | 'week';
+/** Today's groups for habits that aren't under an anchor. */
+export type Bucket = 'anytime' | 'week';
 
 /**
  * "habit" is tracked (%, feeling, dots). "anchor" is a scheduled routine item (Wake up, Work).
@@ -35,8 +36,6 @@ export interface Habit {
   id: number;
   kind: ItemKind;
   name: string;
-  /** Anchors: derived from time (not shown). Habits: Morning / Evening, or "week" for weekly_count / every_n_days. */
-  section: Section;
   why: string | null;
   minimum_version: string | null;
   /** Extra motivational lines; rotate in notifications alongside `why`. */
@@ -100,12 +99,6 @@ export type DayState =
   | 'missed'
   | 'pending' // today, expected, not done yet
   | 'none'; // not expected that day (or before the item existed)
-
-export const SECTION_LABELS: Record<Section, string> = {
-  morning: 'Morning',
-  evening: 'Evening',
-  week: 'This week',
-};
 
 export const FEELINGS = ['Drained', 'Meh', 'Okay', 'Good', 'Great'] as const;
 

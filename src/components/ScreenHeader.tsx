@@ -9,21 +9,32 @@ interface Props {
   title: string;
   /** Right side of the title row (e.g. the progress ring). */
   right?: React.ReactNode;
-  /** Primary action, shown as a solid button. */
-  addLabel?: string;
+  /** The one ＋ button (opens the Habit / Anchor / Activity chooser). */
   onAdd?: () => void;
-  /** Secondary inline actions shown small after the Add button. */
+  /** Small text links under the title (e.g. "← Back to today"). */
   links?: { label: string; onPress: () => void; strong?: boolean }[];
 }
 
-/** Shared header for the tabs: date + settings, big title, solid Add, small text links. */
-export function ScreenHeader({ dateLine, title, right, addLabel = 'Add', onAdd, links = [] }: Props) {
+/** Shared header for the tabs: date, ＋ and settings; big title; optional small links. */
+export function ScreenHeader({ dateLine, title, right, onAdd, links = [] }: Props) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   return (
     <View style={s.header}>
       <View style={s.topRow}>
         <Text style={s.date}>{dateLine}</Text>
+        <View style={{ flex: 1 }} />
+        {onAdd && (
+          <Pressable
+            onPress={onAdd}
+            hitSlop={10}
+            style={({ pressed }) => [s.addBtn, pressed && { opacity: 0.75 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Add a habit, anchor or activity"
+          >
+            <Text style={s.addText}>＋</Text>
+          </Pressable>
+        )}
         <Pressable
           onPress={() => router.push('/settings')}
           hitSlop={12}
@@ -39,22 +50,15 @@ export function ScreenHeader({ dateLine, title, right, addLabel = 'Add', onAdd, 
           <Text style={s.title} numberOfLines={1}>
             {title}
           </Text>
-          <View style={s.actions}>
-            {onAdd && (
-              <Pressable
-                onPress={onAdd}
-                style={({ pressed }) => [s.addBtn, pressed && { opacity: 0.75 }]}
-                accessibilityRole="button"
-              >
-                <Text style={s.addText}>＋ {addLabel}</Text>
-              </Pressable>
-            )}
-            {links.map((l) => (
-              <Pressable key={l.label} onPress={l.onPress} hitSlop={10} accessibilityRole="button">
-                <Text style={[s.link, l.strong && s.linkStrong]}>{l.label}</Text>
-              </Pressable>
-            ))}
-          </View>
+          {links.length > 0 && (
+            <View style={s.actions}>
+              {links.map((l) => (
+                <Pressable key={l.label} onPress={l.onPress} hitSlop={10} accessibilityRole="button">
+                  <Text style={[s.link, l.strong && s.linkStrong]}>{l.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
         {right}
       </View>
@@ -71,14 +75,17 @@ const makeStyles = (t: Theme) =>
     gearText: { fontSize: 22, color: t.textMuted },
     titleRow: { flexDirection: 'row', alignItems: 'center' },
     title: { fontSize: 32, fontWeight: '700', color: t.text },
-    actions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 8 },
+    actions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6 },
     addBtn: {
       backgroundColor: t.accent,
-      borderRadius: 18,
-      paddingHorizontal: 16,
-      paddingVertical: 8,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 8,
     },
-    addText: { color: t.onAccent, fontWeight: '700', fontSize: 15 },
+    addText: { color: t.onAccent, fontWeight: '700', fontSize: 20, marginTop: -1 },
     link: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
     linkStrong: { color: t.accent, fontWeight: '700' },
   });

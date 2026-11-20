@@ -3,7 +3,6 @@ import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-nativ
 import * as Haptics from 'expo-haptics';
 import type { DayState, Habit } from '../types';
 import { useThemedStyles, type Theme } from '../theme';
-import { DeleteButton } from './HabitRow';
 import { formatTime } from '../lib/dates';
 
 /**
@@ -51,16 +50,15 @@ export function AnchorCheck({ pop, done, size = 28 }: { pop: Animated.Value; don
 interface Props {
   anchor: Habit;
   state: DayState;
-  editMode: boolean;
   focus?: 'Now' | 'Next' | null;
+  /** Show "· 7:00 AM" after the name (Today, where there's no time rail). */
+  showTime?: boolean;
   /** single tap: done / undo */
   onToggle(): void;
-  onOpen(): void;
-  onDelete(): void;
 }
 
-/** A key activity on the schedule (Wake up, Work). Not tracked: no %, no dots, no feeling. */
-export function AnchorRow({ anchor, state, editMode, focus, onToggle, onOpen, onDelete }: Props) {
+/** An anchor (Wake up, Work). Tap to mark done. Not tracked: no %, no dots, no feeling. */
+export function AnchorRow({ anchor, state, focus, showTime, onToggle }: Props) {
   const s = useThemedStyles(makeStyles);
   const done = state === 'done' || state === 'skipped';
   const { sweep, pop } = useDoneAnimation(done);
@@ -68,14 +66,12 @@ export function AnchorRow({ anchor, state, editMode, focus, onToggle, onOpen, on
   const range = anchor.end_time ? `until ${formatTime(anchor.end_time)}` : null;
   return (
     <Pressable
-      onPress={editMode ? undefined : onToggle}
-      onLongPress={editMode ? undefined : onOpen}
-      delayLongPress={350}
-      style={({ pressed }) => [s.row, focus && s.focus, pressed && !editMode && { transform: [{ scale: 0.985 }] }]}
+      onPress={onToggle}
+      style={({ pressed }) => [s.row, focus && s.focus, pressed && { transform: [{ scale: 0.985 }] }]}
       accessibilityRole="button"
       accessibilityState={{ checked: done }}
       accessibilityLabel={`${anchor.name}${done ? ', done' : ''}`}
-      accessibilityHint="Tap to mark done. Long-press to edit."
+      accessibilityHint="Tap to mark done. Swipe for Skip, Get ready, Edit or Delete."
     >
       <Animated.View
         pointerEvents="none"
@@ -84,6 +80,9 @@ export function AnchorRow({ anchor, state, editMode, focus, onToggle, onOpen, on
       <View style={{ flex: 1 }}>
         <Text style={[s.name, done && s.nameDone]} numberOfLines={1}>
           {anchor.name}
+          {showTime && anchor.scheduled_time && (
+            <Text style={s.time}>{`  ·  ${formatTime(anchor.scheduled_time)}`}</Text>
+          )}
         </Text>
         {(focus || range) && (
           <View style={s.topLine}>
@@ -96,16 +95,7 @@ export function AnchorRow({ anchor, state, editMode, focus, onToggle, onOpen, on
           </View>
         )}
       </View>
-      {editMode ? (
-        <>
-          <Pressable onPress={onOpen} hitSlop={8} style={{ paddingHorizontal: 8 }}>
-            <Text style={s.edit}>Edit</Text>
-          </Pressable>
-          <DeleteButton onDelete={onDelete} />
-        </>
-      ) : (
-        <AnchorCheck pop={pop} done={done} />
-      )}
+      <AnchorCheck pop={pop} done={done} />
     </Pressable>
   );
 }
@@ -142,5 +132,5 @@ const makeStyles = (t: Theme) =>
     },
     checkDone: { backgroundColor: t.accent, borderColor: t.accent },
     checkMark: { color: t.onAccent, fontSize: 15, fontWeight: '800' },
-    edit: { fontSize: 14, color: t.accent },
+    time: { fontSize: 15, fontWeight: '500', color: t.textMuted, textDecorationLine: 'none' },
   });

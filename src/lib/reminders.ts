@@ -4,6 +4,8 @@ import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from 
 import {
   missedTwiceRisk,
   onTimeline,
+  isMorning,
+  isWeekly,
   progress,
   stateOn,
   toMinutes,
@@ -66,20 +68,20 @@ export function avoidPending(
   idx: RecordIndex,
   ctx: Ctx,
   date = ctx.today,
-  section?: Habit['section'],
+  morningOnly = false,
 ): Habit[] {
   const c = { ...ctx, today: date };
   return habits
-    .filter((h) => isAvoid(h) && (!section || h.section === section))
+    .filter((h) => isAvoid(h) && (!morningOnly || isMorning(h, habits)))
     .filter((h) => visibleOn(h, idx, c, date) && stateOn(h, idx, date, c) === 'pending')
     .sort((a, b) => a.order - b.order);
 }
 
-/** Unfinished habits in the Morning section on `date`. */
+/** Unfinished habits under anchors before noon (or timed before noon) on `date`. */
 export function morningPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date = ctx.today): Habit[] {
   const c = { ...ctx, today: date };
   return habits
-    .filter((h) => wanted(h) && h.section === 'morning' && h.frequency.type !== 'weekly_count')
+    .filter((h) => wanted(h) && isMorning(h, habits))
     .filter((h) => visibleOn(h, idx, c, date) && stateOn(h, idx, date, c) === 'pending')
     .sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? '') || a.order - b.order);
 }
@@ -92,19 +94,16 @@ export function dayPending(
   date = ctx.today,
 ): { habit: Habit; flagged: boolean }[] {
   const c = { ...ctx, today: date };
+  // Morning things first, then the rest of the day, then every-N ones.
+  const rank = (h: Habit) => (isMorning(h, habits) ? 0 : isWeekly(h) ? 2 : 1);
   return habits
     .filter((h) => wanted(h) && h.frequency.type !== 'weekly_count')
     .filter((h) => visibleOn(h, idx, c, date) && stateOn(h, idx, date, c) === 'pending')
     .map((habit) => ({ habit, flagged: missedTwiceRisk(habit, idx, c) }))
     .sort(
-      (a, b) =>
-        Number(b.flagged) - Number(a.flagged) ||
-        sectionRank(a.habit) - sectionRank(b.habit) ||
-        a.habit.order - b.habit.order,
+      (a, b) => Number(b.flagged) - Number(a.flagged) || rank(a.habit) - rank(b.habit) || a.habit.order - b.habit.order,
     );
 }
-
-const sectionRank = (h: Habit) => ({ morning: 0, evening: 1, week: 2 })[h.section];
 
 export interface PaceWarning {
   habit: Habit;
@@ -141,15 +140,15 @@ const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
 
 /**
  * Has this habit's part of the day passed? Then tapping it shows its why / minimum version.
- * Timed: after its time. Morning: after noon. Evening: once the evening nudge starts.
- * This week: when it's behind pace.
+ * Timed: after its time. Under a morning anchor: after noon. Otherwise: once the evening nudge
+ * starts. This week: when it's behind pace.
  */
-export function sectionPassed(h: Habit, r: ReminderSettings, now: Date, behind: boolean): boolean {
+export function sectionPassed(h: Habit, habits: Habit[], r: ReminderSettings, now: Date, behind: boolean): boolean {
   const n = minutesOf(now);
+  if (isWeekly(h)) return behind;
   if (h.scheduled_time && onTimeline(h)) return n >= toMinutes(h.scheduled_time);
-  if (h.section === 'morning') return n >= toMinutes(MORNING_ENDS);
-  if (h.section === 'evening') return n >= toMinutes(nudgeStart(r));
-  return behind;
+  if (isMorning(h, habits)) return n >= toMinutes(MORNING_ENDS);
+  return n >= toMinutes(nudgeStart(r));
 }
 
 export type BannerState =
@@ -178,7 +177,7 @@ export function banners(habits: Habit[], idx: RecordIndex, ctx: Ctx, r: Reminder
   // banner steps aside rather than stacking a duplicate.
   if (!evening && r.morningEnabled && r.morningDismissedOn !== ctx.today && n >= toMinutes(r.morningTime)) {
     const m = morningPending(habits, idx, ctx);
-    const avoid = avoidPending(habits, idx, ctx, ctx.today, 'morning');
+    const avoid = avoidPending(habits, idx, ctx, ctx.today, true);
     if (m.length || avoid.length) out.push({ kind: 'morning', habits: m, avoid });
   }
   if (evening) out.push(evening);
@@ -329,7 +328,7 @@ export function planNotifications(
     if (r.morningEnabled && r.morningDismissedOn !== date) {
       const at = atTime(date, r.morningTime);
       const m = morningPending(habits, idx, ctx, date);
-      const av = avoidPending(habits, idx, ctx, date, 'morning');
+      const av = avoidPending(habits, idx, ctx, date, true);
       if (future(at) && (m.length || av.length)) {
         const lines = [
           ...(m.length ? [`${m.length} to do: ${list(m.map((h) => h.name))}`] : []),

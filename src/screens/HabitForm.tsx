@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { ActivityUnit, Frequency, FrequencyType, Habit, HabitInput, HabitKind, ItemKind, Section } from '../types';
+import type { ActivityUnit, Frequency, FrequencyType, Habit, HabitInput, HabitKind, ItemKind } from '../types';
 import { useStore } from '../store';
 import { Chip, Help, Input, Label, Segmented, Stepper, Toggle } from '../components/ui';
 import { TimeField, formatTime } from '../components/TimeField';
-import { onTimeline, toMinutes } from '../lib/schedule';
+import { isWeekly } from '../lib/schedule';
 import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
 import { suggestPlanWhen } from '../lib/reminders';
@@ -32,9 +32,8 @@ const LEADS: [number, string][] = [
 ];
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-type When = 'morning' | 'evening' | 'time';
-
-const sectionForTime = (hm: string): Section => (toMinutes(hm) < 12 * 60 ? 'morning' : 'evening');
+/** after = under an anchor (or another habit); anytime = no anchor; time = its own time. */
+type When = 'after' | 'anytime' | 'time';
 
 export function HabitForm({ visible, habit, defaultKind = 'habit', onClose }: Props) {
   const s = useThemedStyles(makeStyles);
@@ -62,7 +61,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   );
   const [n, setN] = useState(habit?.frequency.n ?? 2);
   const [when, setWhen] = useState<When>(
-    habit?.kind === 'habit' && habit.scheduled_time ? 'time' : habit?.section === 'evening' ? 'evening' : 'morning',
+    habit?.kind === 'habit' && habit.scheduled_time ? 'time' : habit?.stack_after != null ? 'after' : 'anytime',
   );
   const [time, setTime] = useState(habit?.scheduled_time ?? '08:00');
   const [hasEnd, setHasEnd] = useState(!!habit?.end_time);
@@ -100,16 +99,9 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const isHabit = kind === 'habit';
   const avoid = isHabit && habitKind === 'avoid';
   const weekly = ftype === 'weekly_count' || ftype === 'every_n_days';
-  const section: Section = isAnchor
-    ? sectionForTime(time)
-    : isActivity || weekly
-      ? 'week'
-      : when === 'time'
-        ? sectionForTime(time)
-        : when;
   const scheduled = isAnchor || (isHabit && !weekly && when === 'time');
 
-  // Stack candidates: any anchor or timeline item, plus habits in the same section; never a loop.
+  // Never stack on something that (eventually) stacks on this habit.
   const createsLoop = (candidate: Habit) => {
     let cur: Habit | undefined = candidate;
     const seen = new Set<number>();
@@ -120,18 +112,23 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
     }
     return false;
   };
-  const candidates =
-    !isHabit || scheduled
-      ? []
-      : habits
-          .filter((h) => h.id !== habit?.id && (onTimeline(h) || (h.kind === 'habit' && h.section === section)))
-          .filter((h) => !createsLoop(h))
-          .sort(
-            (a, b) =>
-              Number(onTimeline(b)) - Number(onTimeline(a)) ||
-              (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? ''),
-          );
-  const validAnchor = stackAfter != null && candidates.some((a) => a.id === stackAfter) ? stackAfter : null;
+  const anchors = habits
+    .filter((h) => h.kind === 'anchor')
+    .sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? '') || a.id - b.id);
+  // "Stack after another habit" (More options): untimed, non-weekly habits.
+  const habitTargets =
+    isHabit && !weekly && when !== 'time'
+      ? habits.filter((h) => h.kind === 'habit' && h.id !== habit?.id && !isWeekly(h) && !createsLoop(h))
+      : [];
+  const validAnchor =
+    isHabit &&
+    !weekly &&
+    when === 'after' &&
+    stackAfter != null &&
+    (anchors.some((a) => a.id === stackAfter) || habitTargets.some((h) => h.id === stackAfter))
+      ? stackAfter
+      : null;
+  const afterHabit = validAnchor != null && !anchors.some((a) => a.id === validAnchor);
   const anchorName = validAnchor != null ? (habits.find((x) => x.id === validAnchor)?.name ?? null) : null;
   const openPlan = () => {
     setPlanWhen(suggestPlanWhen(anchorName, scheduled ? time : null));
@@ -167,7 +164,6 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
     const input: HabitInput = {
       kind,
       name: name.trim(),
-      section,
       frequency,
       why: isHabit ? why.trim() || null : null,
       minimum_version: isHabit ? minimum.trim() || null : null,
@@ -249,7 +245,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const moreSet = [
     scheduled && reminder,
     readyMin !== 3,
-    isHabit && validAnchor != null,
+    isHabit && afterHabit,
     isHabit && planWhen != null,
     isHabit && obstacle != null,
     isHabit && !!why.trim(),
@@ -398,15 +394,41 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
             {!weekly && (
               <>
                 <Label>When</Label>
-                <Segmented<When>
-                  value={when}
-                  onChange={setWhen}
-                  options={[
-                    { value: 'morning', label: 'Morning' },
-                    { value: 'evening', label: 'Evening' },
-                    { value: 'time', label: 'At a time' },
-                  ]}
-                />
+                <View style={s.chips}>
+                  {anchors.map((a) => (
+                    <Chip
+                      key={a.id}
+                      label={a.scheduled_time ? `${a.name} · ${formatTime(a.scheduled_time)}` : a.name}
+                      active={validAnchor === a.id}
+                      onPress={() => {
+                        setWhen('after');
+                        setStackAfter(a.id);
+                      }}
+                    />
+                  ))}
+                  {afterHabit && (
+                    <Chip
+                      label={`After ${habits.find((x) => x.id === validAnchor)?.name ?? ''}`}
+                      active
+                      onPress={() => {}}
+                    />
+                  )}
+                  <Chip
+                    label="Anytime"
+                    active={when === 'anytime' || (when === 'after' && validAnchor == null)}
+                    onPress={() => setWhen('anytime')}
+                  />
+                  <Chip label="At a time" active={when === 'time'} onPress={() => setWhen('time')} />
+                </View>
+                <View style={{ marginTop: 8 }}>
+                  <Help>
+                    {when === 'time'
+                      ? 'Listed under Anytime on Today, at its time on Schedule.'
+                      : validAnchor != null
+                        ? 'Listed under it on Today, and highlighted once it’s done.'
+                        : 'Listed under Anytime on Today.'}
+                  </Help>
+                </View>
                 {when === 'time' && (
                   <View style={s.detail}>
                     <TimeField value={time} onChange={setTime} />
@@ -468,19 +490,20 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
                 )}
                 {readyFields}
 
-                {isHabit && candidates.length > 0 && (
+                {habitTargets.length > 0 && (
                   <>
-                    <Label hint="optional">Stack after</Label>
+                    <Label hint="optional">Stack after another habit</Label>
                     <View style={s.chips}>
-                      <Chip label="None" active={validAnchor == null} onPress={() => setStackAfter(null)} />
-                      {candidates.map((a) => (
+                      {habitTargets.map((h) => (
                         <Chip
-                          key={a.id}
-                          label={
-                            a.scheduled_time && onTimeline(a) ? `${a.name} · ${formatTime(a.scheduled_time)}` : a.name
-                          }
-                          active={validAnchor === a.id}
-                          onPress={() => setStackAfter(a.id)}
+                          key={h.id}
+                          label={h.name}
+                          active={validAnchor === h.id}
+                          onPress={() => {
+                            if (validAnchor === h.id) return setWhen('anytime');
+                            setWhen('after');
+                            setStackAfter(h.id);
+                          }}
                         />
                       ))}
                     </View>

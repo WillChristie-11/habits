@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, JournalPage, Meta, RecordStatus, Section } from '../types';
+import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, JournalPage, Meta, RecordStatus } from '../types';
 import { entryToLines } from '../lib/journal';
 import { defaultAnchors } from '../lib/defaults';
 import { BACKUP_APP, type Backup } from '../lib/backupFormat';
@@ -11,7 +11,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -130,7 +130,12 @@ async function open() {
       const now = new Date().toISOString();
       await db.withTransactionAsync(async () => {
         for (const [date, lines] of byDate) {
-          await db.runAsync('INSERT OR IGNORE INTO pages (date, text, updated_at) VALUES (?, ?, ?)', date, lines.join('\n'), now);
+          await db.runAsync(
+            'INSERT OR IGNORE INTO pages (date, text, updated_at) VALUES (?, ?, ?)',
+            date,
+            lines.join('\n'),
+            now,
+          );
         }
         await db.execAsync('DROP TABLE entries;');
       });
@@ -155,6 +160,18 @@ async function open() {
       `);
     });
   }
+  if (version >= 1 && version < 10) {
+    // v10: Today is grouped by anchors instead of Morning / Evening. Untimed daily habits that
+    // were in Morning go under the first anchor before noon; Evening ones become "Anytime".
+    // The section column stays (SQLite can't drop it easily) but is no longer read.
+    await db.runAsync(
+      `UPDATE habits SET stack_after = (
+          SELECT a.id FROM habits a WHERE a.kind = 'anchor' AND a.scheduled_time IS NOT NULL AND a.scheduled_time < '12:00'
+          ORDER BY a.scheduled_time, a.id LIMIT 1)
+       WHERE kind = 'habit' AND section = 'morning' AND stack_after IS NULL AND scheduled_time IS NULL
+         AND json_extract(frequency, '$.type') IN ('daily', 'specific_days')`,
+    );
+  }
   if (version === 0) {
     // Brand-new install: start with a few editable anchors.
     const now = new Date().toISOString();
@@ -163,7 +180,7 @@ async function open() {
         `INSERT INTO habits (kind, name, section, frequency, sort_order, scheduled_time, end_time, ready_minutes, created_at)
          VALUES ('anchor', ?, ?, ?, ?, ?, ?, ?, ?)`,
         a.name,
-        a.section,
+        legacySection(a),
         JSON.stringify(a.frequency),
         i,
         a.scheduled_time,
@@ -199,7 +216,6 @@ interface HabitRow {
   plan_action: string | null;
   obstacle: string | null;
   name: string;
-  section: Section;
   why: string | null;
   minimum_version: string | null;
   frequency: string;
@@ -244,7 +260,6 @@ function rowToHabit(r: HabitRow): Habit {
     target_min: r.target_min ?? null,
     target_max: r.target_max ?? null,
     name: r.name,
-    section: r.section,
     why: r.why,
     minimum_version: r.minimum_version,
     messages: parseMessages(r.messages),
@@ -273,7 +288,7 @@ function rowToHabit(r: HabitRow): Habit {
 
 export async function loadHabits(): Promise<Habit[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<HabitRow>('SELECT * FROM habits ORDER BY section, sort_order, id');
+  const rows = await db.getAllAsync<HabitRow>('SELECT * FROM habits ORDER BY sort_order, id');
   return rows.map(rowToHabit);
 }
 
@@ -287,10 +302,7 @@ export async function loadRecords(): Promise<DayRecord[]> {
 
 export async function createHabit(input: HabitInput): Promise<number> {
   const db = await getDb();
-  const max = await db.getFirstAsync<{ m: number | null }>(
-    'SELECT MAX(sort_order) AS m FROM habits WHERE section = ?',
-    input.section,
-  );
+  const max = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort_order) AS m FROM habits');
   const res = await db.runAsync(
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
        scheduled_time, end_time, reminder, remind_before, meta, messages,
@@ -299,7 +311,7 @@ export async function createHabit(input: HabitInput): Promise<number> {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
-    input.section,
+    legacySection(input),
     input.why,
     input.minimum_version,
     JSON.stringify(input.frequency),
@@ -330,11 +342,9 @@ export async function createHabit(input: HabitInput): Promise<number> {
 
 export async function updateHabit(id: number, input: HabitInput): Promise<void> {
   const db = await getDb();
-  const current = await db.getFirstAsync<{ section: Section }>('SELECT section FROM habits WHERE id = ?', id);
-  let orderClause = '';
   const params: (string | number | null)[] = [
     input.name,
-    input.section,
+    legacySection(input),
     input.why,
     input.minimum_version,
     JSON.stringify(input.frequency),
@@ -358,27 +368,21 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.target_min,
     input.target_max,
   ];
-  if (current && current.section !== input.section) {
-    // Moving sections: append to the end of the new one, and detach anything stacked on it.
-    const max = await db.getFirstAsync<{ m: number | null }>(
-      'SELECT MAX(sort_order) AS m FROM habits WHERE section = ?',
-      input.section,
-    );
-    orderClause = ', sort_order = ?';
-    params.push((max?.m ?? -1) + 1);
-    // Habits stacked on a habit that changed section would end up in limbo; anchors keep their followers.
-    if (input.kind === 'habit') await db.runAsync('UPDATE habits SET stack_after = NULL WHERE stack_after = ?', id);
-  }
   params.push(id);
   await db.runAsync(
     `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
        scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?,
        habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?,
        plan_when = ?, plan_action = ?, obstacle = ?, ready_minutes = ?,
-       unit = ?, target_min = ?, target_max = ?${orderClause}
+       unit = ?, target_min = ?, target_max = ?
      WHERE id = ?`,
     ...params,
   );
+}
+
+/** The old section column is NOT NULL with a CHECK, so keep writing a valid (unused) value. */
+function legacySection(h: Pick<HabitInput, 'frequency'>): 'morning' | 'week' {
+  return h.frequency.type === 'weekly_count' || h.frequency.type === 'every_n_days' ? 'week' : 'morning';
 }
 
 export async function deleteHabit(id: number): Promise<void> {
@@ -485,7 +489,8 @@ async function userTables(db: SQLite.SQLiteDatabase): Promise<string[]> {
 export async function exportAll(): Promise<Backup> {
   const db = await getDb();
   const tables: Backup['tables'] = {};
-  for (const t of await userTables(db)) tables[t] = await db.getAllAsync<Record<string, unknown>>(`SELECT * FROM "${t}"`);
+  for (const t of await userTables(db))
+    tables[t] = await db.getAllAsync<Record<string, unknown>>(`SELECT * FROM "${t}"`);
   return { app: BACKUP_APP, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), tables };
 }
 
@@ -531,7 +536,9 @@ export async function importAll(backup: Backup): Promise<Record<string, number>>
 
 export async function loadWeeks(): Promise<Record<string, string>> {
   const db = await getDb();
-  const rows = await db.getAllAsync<{ week_start: string; intention: string }>('SELECT week_start, intention FROM weeks');
+  const rows = await db.getAllAsync<{ week_start: string; intention: string }>(
+    'SELECT week_start, intention FROM weeks',
+  );
   return Object.fromEntries(rows.map((r) => [r.week_start, r.intention]));
 }
 
@@ -554,5 +561,10 @@ export async function saveWeek(weekStart: string, intention: string): Promise<vo
 /** Replace a record's meta (an activity log's amount). */
 export async function setRecordMeta(habitId: number, date: string, meta: Meta | null): Promise<void> {
   const db = await getDb();
-  await db.runAsync('UPDATE records SET meta = ? WHERE habit_id = ? AND date = ?', meta ? JSON.stringify(meta) : null, habitId, date);
+  await db.runAsync(
+    'UPDATE records SET meta = ? WHERE habit_id = ? AND date = ?',
+    meta ? JSON.stringify(meta) : null,
+    habitId,
+    date,
+  );
 }

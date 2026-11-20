@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Section } from '../types';
 import { useStore } from '../store';
-import { dayCompletion, layoutDay, visibleOn } from '../lib/schedule';
+import { dayCompletion, nextAnchor, stateOn, todayGroups, visibleOn } from '../lib/schedule';
 import { fromKey } from '../lib/dates';
 import { ProgressRing } from '../components/ProgressRing';
 import { SectionBlock } from '../components/SectionBlock';
@@ -11,36 +11,46 @@ import { Banners } from '../components/Banners';
 import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { NextAnchorLine } from '../components/NextAnchorLine';
 import { WeekIntentionLine } from '../components/WeekIntention';
 import { LogRow } from '../components/LogRow';
+import { AnchorRow } from '../components/AnchorRow';
+import { SwipeRow } from '../components/SwipeRow';
 import { useThemedStyles, type Theme } from '../theme';
 
-const SECTIONS: Section[] = ['morning', 'evening', 'week'];
-
-/** Habits for one day (today by default), with the week strip on top. Anchors live on Schedule. */
+/**
+ * One day (today by default), grouped by anchors in time order: each anchor is a header you tap
+ * to mark done, with the habits stacked after it underneath. Then Anytime and This week.
+ */
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { habits, idx, ctx } = useStore();
+  const { habits, idx, ctx, now } = useStore();
   const [picked, setPicked] = useState<string | null>(null);
   // Follow "today" across midnight unless a past day is being viewed.
   const date = picked && picked < ctx.today ? picked : ctx.today;
   const isToday = date === ctx.today;
-  const [editMode, setEditMode] = useState(false);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const actions = useHabitActions(date);
 
-  const tracked = useMemo(() => habits.filter((h) => h.kind === 'habit'), [habits]);
+  const items = useMemo(() => habits.filter((h) => h.kind === 'habit' || h.kind === 'anchor'), [habits]);
+  const tracked = useMemo(() => items.filter((h) => h.kind === 'habit'), [items]);
+  const dayCtx = useMemo(() => ({ ...ctx, today: date }), [ctx, date]);
+  const groups = useMemo(() => todayGroups(items, (h) => visibleOn(h, idx, ctx, date)), [items, idx, ctx, date]);
+  const notToday = tracked.filter((h) => !visibleOn(h, idx, ctx, date));
   const ring = dayCompletion(habits, idx, ctx, date);
-  const layout = useMemo(
-    () => layoutDay(tracked, editMode ? () => true : (h) => visibleOn(h, idx, ctx, date), { timeline: false }),
-    [tracked, editMode, idx, ctx, date],
-  );
-  const hasRows = SECTIONS.some((sec) => layout.sections[sec].length > 0);
+  const focus = isToday ? nextAnchor(habits, idx, ctx, now.getHours() * 60 + now.getMinutes()) : null;
+  const empty = groups.anchors.length === 0 && groups.anytime.length === 0 && groups.week.length === 0;
 
   const title = isToday ? 'Today' : fromKey(date).toLocaleDateString(undefined, { weekday: 'long' });
   const dateLine = fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const common = {
+    date,
+    setScrollEnabled,
+    onToggle: actions.onToggle,
+    onOpen: actions.onOpen,
+    onDelete: actions.onDelete,
+    swipeActions: actions.swipeActions,
+  };
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
@@ -48,18 +58,8 @@ export function TodayScreen() {
         dateLine={dateLine}
         title={title}
         right={ring.total > 0 ? <ProgressRing done={ring.done} total={ring.total} /> : null}
-        onAdd={isToday ? () => actions.openForm(null) : undefined}
-        addLabel="Habit"
-        links={
-          isToday
-            ? [
-                { label: '＋ Activity', onPress: () => actions.openForm(null, 'activity') },
-                ...(tracked.length > 0
-                  ? [{ label: editMode ? 'Done' : 'Edit', onPress: () => setEditMode((e) => !e), strong: editMode }]
-                  : []),
-              ]
-            : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]
-        }
+        onAdd={isToday ? actions.openChooser : undefined}
+        links={isToday ? [] : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]}
       />
 
       <ScrollView
@@ -68,41 +68,81 @@ export function TodayScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {isToday && <WeekIntentionLine />}
-        {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} onReady={actions.getReady} />}
         {isToday && <Banners onStart={actions.startTimer} />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
         {!isToday && (
-          <Text style={s.pastHint}>Editing {dateLine}. Tap a circle to mark it done, long-press for a rest day.</Text>
+          <Text style={s.pastHint}>Editing {dateLine}. Tap a circle to mark it done, swipe right to skip.</Text>
         )}
 
-        {tracked.length === 0 ? (
+        {tracked.length === 0 && groups.anchors.length === 0 ? (
           <View style={s.empty}>
             <Text style={s.emptyTitle}>Start small.</Text>
-            <Text style={s.emptyText}>Add one habit for the morning and one for the evening.</Text>
+            <Text style={s.emptyText}>Add one habit after you wake up and one for the evening.</Text>
             <Pressable style={s.emptyBtn} onPress={() => actions.openForm(null)}>
               <Text style={s.emptyBtnText}>Add a habit</Text>
             </Pressable>
           </View>
-        ) : !hasRows && !editMode ? (
+        ) : empty ? (
           <Text style={s.none}>Nothing due this day.</Text>
         ) : (
-          SECTIONS.map((sec) => (
-            <SectionBlock
-              key={sec}
-              section={sec}
-              rows={layout.sections[sec]}
-              date={date}
-              editMode={editMode && isToday}
-              setScrollEnabled={setScrollEnabled}
-              onToggle={actions.onToggle}
-              onOpen={actions.onOpen}
-              onLongPress={actions.onLongPress}
-              onDelete={actions.onDelete}
-            />
-          ))
+          <>
+            {groups.anchors.map(({ anchor, rows }) => {
+              const st = stateOn(anchor, idx, date, dayCtx);
+              return (
+                <SectionBlock
+                  key={anchor.id}
+                  {...common}
+                  rows={rows}
+                  nested
+                  head={
+                    <SwipeRow
+                      name={anchor.name}
+                      onDelete={() => actions.onDelete(anchor)}
+                      actions={actions.swipeActions(anchor)}
+                      gap={8}
+                      radius={14}
+                    >
+                      <AnchorRow
+                        anchor={anchor}
+                        state={st}
+                        showTime
+                        focus={focus?.anchor.id === anchor.id ? focus.label : null}
+                        onToggle={() => actions.onToggle(anchor, st)}
+                      />
+                    </SwipeRow>
+                  }
+                />
+              );
+            })}
+            <SectionBlock {...common} title="Anytime" rows={groups.anytime} />
+            <SectionBlock {...common} title="This week" rows={groups.week} />
+          </>
         )}
-        {isToday && !editMode && <LogRow onEdit={(h) => actions.openForm(h)} onDelete={actions.onDelete} />}
-        {editMode && <Text style={s.editHint}>Drag ≡ to reorder. Tap ✕ to remove.</Text>}
+
+        {isToday && tracked.length === 0 && groups.anchors.length > 0 && (
+          <View style={s.tip}>
+            <Text style={s.tipText}>Add a habit and put it after one of your anchors, or leave it for anytime.</Text>
+            <Pressable style={s.tipBtn} onPress={() => actions.openForm(null)} accessibilityRole="button">
+              <Text style={s.tipBtnText}>Add a habit</Text>
+            </Pressable>
+          </View>
+        )}
+        {notToday.length > 0 && (
+          <View style={s.notToday}>
+            <Text style={s.notTodayLabel}>{isToday ? 'Not today' : 'Not due this day'}</Text>
+            <View style={s.notTodayList}>
+              {notToday.map((h) => (
+                <Pressable key={h.id} onPress={() => actions.onOpen(h)} hitSlop={6}>
+                  <Text style={s.notTodayItem}>{h.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
+        {isToday && <LogRow onEdit={(h) => actions.openForm(h)} onDelete={actions.onDelete} />}
+        {!empty && isToday && (
+          <Text style={s.hint}>Swipe right to skip or get ready · left to delete · hold and drag to reorder</Text>
+        )}
       </ScrollView>
 
       {actions.overlays}
@@ -126,5 +166,19 @@ const makeStyles = (t: Theme) =>
       borderRadius: 12,
     },
     emptyBtnText: { color: t.onAccent, fontWeight: '600', fontSize: 16 },
-    editHint: { textAlign: 'center', color: t.textMuted, fontSize: 13, marginTop: 16 },
+    notToday: { marginTop: 22, marginHorizontal: 4 },
+    notTodayLabel: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: t.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+    notTodayList: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 6 },
+    notTodayItem: { fontSize: 14, color: t.textMuted, textDecorationLine: 'underline' },
+    tip: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginTop: 18, gap: 10 },
+    tipText: { fontSize: 14, color: t.textMuted, lineHeight: 20 },
+    tipBtn: { alignSelf: 'flex-start', backgroundColor: t.accent, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10 },
+    tipBtnText: { color: t.onAccent, fontWeight: '600', fontSize: 15 },
+    hint: { textAlign: 'center', color: t.textMuted, fontSize: 12, marginTop: 20, lineHeight: 17 },
   });

@@ -1,9 +1,8 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { DayState, Habit } from '../types';
-import { SECTION_LABELS } from '../types';
 import { useStore } from '../store';
-import { feelingLabel, feelingStats, frequencyText, progress, timeline } from '../lib/schedule';
+import { feelingLabel, feelingStats, frequencyText, groupLabel, progress, timeline } from '../lib/schedule';
 import { WEEKDAY_SHORT, last7, weekDays, weekday } from '../lib/dates';
 import { Dot } from '../components/Dots';
 import { Button } from '../components/ui';
@@ -74,8 +73,8 @@ function Body({
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.name}>{h.name}</Text>
         <Text style={styles.sub}>
-          {h.scheduled_time ? formatTime(h.scheduled_time) : SECTION_LABELS[h.section]} · {frequencyText(h)}
-          {anchor ? ` · after ${anchor.name}` : ''}
+          {h.scheduled_time ? formatTime(h.scheduled_time) : anchor ? `After ${anchor.name}` : groupLabel(h, habits)} ·{' '}
+          {frequencyText(h)}
         </Text>
 
         {(h.why || h.minimum_version) && (

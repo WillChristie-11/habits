@@ -3,19 +3,21 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { DayState, Habit } from '../types';
 import { useStore } from '../store';
 import { fromMinutes, stateOn, timelineFocus, toMinutes, type DayLayout, type Row } from '../lib/schedule';
-import { nudgeStart, MORNING_ENDS } from '../lib/reminders';
+import { nudgeStart } from '../lib/reminders';
 import { formatTime } from '../lib/dates';
 import { useThemedStyles, type Theme } from '../theme';
 import { AnchorRow } from './AnchorRow';
 import { HabitRow } from './HabitRow';
+import { ReorderList } from './ReorderList';
+import { SwipeRow, type SwipeAction } from './SwipeRow';
 
 interface Props {
   layout: DayLayout;
-  editMode: boolean;
+  setScrollEnabled(v: boolean): void;
   onToggle(h: Habit, state: DayState): void;
   onOpen(h: Habit): void;
-  onLongPress(h: Habit): void;
   onDelete(h: Habit): void;
+  swipeActions(h: Habit): SwipeAction[];
 }
 
 type Entry =
@@ -24,18 +26,17 @@ type Entry =
 
 /**
  * The day on a vertical rail. Anchors are the key activities (large node, prominent card);
- * timed habits are small nodes; habits without a time sit as compact rows under a quiet
- * "anytime" label at the start of their window (Morning at the morning reminder time,
- * Evening when the evening nudge starts, This week at the end).
+ * timed habits are small nodes; habits under no anchor sit as compact rows under a quiet
+ * "Anytime" label when the evening nudge starts, and This week at the end.
  */
-export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress, onDelete }: Props) {
+export function TimelineBlock({ layout, setScrollEnabled, onToggle, onOpen, onDelete, swipeActions }: Props) {
   const { idx, ctx, now, settings } = useStore();
   const s = useThemedStyles(makeStyles);
   const r = settings.reminders;
 
   const stateOf = (h: Habit) => stateOn(h, idx, ctx.today, ctx);
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const focus = editMode ? null : timelineFocus(layout.timeline, stateOf, nowMin);
+  const focus = timelineFocus(layout.timeline, stateOf, nowMin);
 
   const entries: Entry[] = [];
   for (const row of layout.timeline) {
@@ -49,8 +50,12 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
   }
   const flex = (key: string, minutes: number, label: string, rows: Row[]) =>
     rows.length && entries.push({ kind: 'flex', key, minutes, label, rows });
-  flex('morning', toMinutes(r.morningTime), `Anytime this morning · before ${formatTime(MORNING_ENDS)}`, layout.sections.morning);
-  flex('evening', toMinutes(nudgeStart(r)), `Anytime this evening · before ${formatTime(r.eveningDeadline)}`, layout.sections.evening);
+  flex(
+    'anytime',
+    toMinutes(nudgeStart(r)),
+    `Anytime · before ${formatTime(r.eveningDeadline)}`,
+    layout.sections.anytime,
+  );
   flex('week', 24 * 60, 'Any day this week', layout.sections.week);
   entries.sort((a, b) => a.minutes - b.minutes || (a.kind === 'flex' ? 1 : b.kind === 'flex' ? -1 : 0));
 
@@ -60,25 +65,40 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
   if (nowIndex === -1) nowIndex = entries.length;
 
   const habitRow = (row: Row) => (
-    <HabitRow
+    <SwipeRow
       key={row.habit.id}
-      row={{ ...row, depth: Math.max(0, row.depth - (row.anchor?.kind === 'anchor' ? 1 : 0)) }}
-      compact
-      editMode={editMode}
-      focus={focus?.id === row.habit.id ? focus.label : null}
-      onToggle={(st) => onToggle(row.habit, st)}
-      onOpen={() => onOpen(row.habit)}
-      onLongPress={() => onLongPress(row.habit)}
+      name={row.habit.name}
       onDelete={() => onDelete(row.habit)}
+      actions={swipeActions(row.habit)}
+      gap={5}
+      radius={10}
+    >
+      <HabitRow
+        row={row}
+        compact
+        focus={focus?.id === row.habit.id ? focus.label : null}
+        onToggle={(st) => onToggle(row.habit, st)}
+        onOpen={() => onOpen(row.habit)}
+      />
+    </SwipeRow>
+  );
+  // Rows under an anchor start at depth 0 so they reorder as their own list.
+  const list = (rows: Row[], under: boolean) => (
+    <ReorderList
+      rows={rows.map((x) => ({ ...x, depth: Math.max(0, x.depth - (under ? 1 : 0)) }))}
+      renderRow={habitRow}
+      setScrollEnabled={setScrollEnabled}
     />
   );
 
   const out: React.ReactNode[] = [];
   entries.forEach((e, i) => {
-    if (i === nowIndex && !editMode) {
+    if (i === nowIndex) {
       out.push(
         <View key="now" style={s.entry} accessibilityLabel={`Now, ${formatTime(fromMinutes(nowMin))}`}>
-          <Text style={[s.time, s.nowTime]} numberOfLines={1}>{formatTime(fromMinutes(nowMin))}</Text>
+          <Text style={[s.time, s.nowTime]} numberOfLines={1}>
+            {formatTime(fromMinutes(nowMin))}
+          </Text>
           <View style={s.rail}>
             <View style={s.line} />
             <View style={[s.node, s.nowNode]} />
@@ -91,7 +111,8 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
     }
     const first = e.rows[0].habit;
     const isFocus = focus?.id === first.id;
-    const passed = e.kind !== 'flex' && !isFocus && e.minutes < nowMin && e.rows.every((x) => stateOf(x.habit) !== 'pending');
+    const passed =
+      e.kind !== 'flex' && !isFocus && e.minutes < nowMin && e.rows.every((x) => stateOf(x.habit) !== 'pending');
 
     if (e.kind === 'anchor') {
       const done = ['done', 'skipped'].includes(stateOf(first));
@@ -103,16 +124,21 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
             <View style={[s.node, s.anchorNode, (isFocus || done) && s.anchorNodeOn]} />
           </View>
           <View style={s.content}>
-            <AnchorRow
-              anchor={first}
-              state={stateOf(first)}
-              editMode={editMode}
-              focus={isFocus ? focus!.label : null}
-              onToggle={() => onToggle(first, stateOf(first))}
-              onOpen={() => onOpen(first)}
+            <SwipeRow
+              name={first.name}
               onDelete={() => onDelete(first)}
-            />
-            {e.rows.slice(1).map(habitRow)}
+              actions={swipeActions(first)}
+              gap={8}
+              radius={14}
+            >
+              <AnchorRow
+                anchor={first}
+                state={stateOf(first)}
+                focus={isFocus ? focus!.label : null}
+                onToggle={() => onToggle(first, stateOf(first))}
+              />
+            </SwipeRow>
+            {list(e.rows.slice(1), true)}
           </View>
         </View>,
       );
@@ -124,7 +150,7 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
             <View style={s.line} />
             <View style={[s.node, s.smallNode, isFocus && s.anchorNodeOn]} />
           </View>
-          <View style={s.content}>{e.rows.map(habitRow)}</View>
+          <View style={s.content}>{list(e.rows, false)}</View>
         </View>,
       );
     } else if (e.kind === 'flex') {
@@ -137,16 +163,18 @@ export function TimelineBlock({ layout, editMode, onToggle, onOpen, onLongPress,
           </View>
           <View style={s.content}>
             <Text style={s.flexLabel}>{e.label}</Text>
-            {e.rows.map(habitRow)}
+            {list(e.rows, false)}
           </View>
         </View>,
       );
     }
   });
-  if (nowIndex === entries.length && !editMode) {
+  if (nowIndex === entries.length) {
     out.push(
       <View key="now" style={s.entry}>
-        <Text style={[s.time, s.nowTime]} numberOfLines={1}>{formatTime(fromMinutes(nowMin))}</Text>
+        <Text style={[s.time, s.nowTime]} numberOfLines={1}>
+          {formatTime(fromMinutes(nowMin))}
+        </Text>
         <View style={s.rail}>
           <View style={[s.node, s.nowNode]} />
         </View>

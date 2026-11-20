@@ -3,7 +3,7 @@ import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
-import { dayCompletion, periodSummary, progress, timeline, visibleOn } from '../lib/schedule';
+import { dayCompletion, periodSummary, progress, timeline, todayGroups, visibleOn } from '../lib/schedule';
 import { WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { Dot } from './Dots';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
@@ -14,6 +14,7 @@ interface Props {
 }
 
 const RING = 34;
+const NAME_W = 132;
 
 /**
  * The week the selected day is in: a ring per day (that day's completion), the week's overall %,
@@ -50,10 +51,15 @@ export function WeekStrip({ selected, onSelect }: Props) {
   );
 
   const label = isCurrentWeek ? 'This week' : rangeLabel(days[0], days[6]);
-  const rank = { morning: 0, evening: 1, week: 2 } as const;
+  // Same order as Today: by anchor, then Anytime, then This week.
+  const g = todayGroups(
+    habits.filter((h) => h.kind === 'habit' || h.kind === 'anchor'),
+    () => true,
+  );
+  const rank = new Map([...g.anchors.flatMap((a) => a.rows), ...g.anytime, ...g.week].map((r, i) => [r.habit.id, i]));
   const tracked = habits
     .filter((h) => h.kind === 'habit' && days.some((d) => visibleOn(h, idx, ctx, d)))
-    .sort((a, b) => rank[a.section] - rank[b.section] || a.order - b.order);
+    .sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
 
   return (
     <View style={s.card} {...pan.panHandlers}>
@@ -65,12 +71,7 @@ export function WeekStrip({ selected, onSelect }: Props) {
           {label}
           {summary.pct != null && <Text style={s.pct}>{`  ${Math.round(summary.pct * 100)}%`}</Text>}
         </Text>
-        <Pressable
-          onPress={() => shiftWeek(1)}
-          hitSlop={12}
-          disabled={isCurrentWeek}
-          accessibilityLabel="Next week"
-        >
+        <Pressable onPress={() => shiftWeek(1)} hitSlop={12} disabled={isCurrentWeek} accessibilityLabel="Next week">
           <Text style={[s.chev, isCurrentWeek && { opacity: 0.25 }]}>›</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
@@ -114,7 +115,7 @@ export function WeekStrip({ selected, onSelect }: Props) {
           {tracked.length === 0 && <Text style={s.gridEmpty}>No habits this week.</Text>}
           {tracked.length > 0 && (
             <View style={s.gridRow}>
-              <View style={{ width: 92 }} />
+              <View style={{ width: NAME_W }} />
               <View style={s.gridCells}>
                 {days.map((d) => (
                   <Text key={d} style={[s.gridHead, d === ctx.today && s.todayText]}>
@@ -129,7 +130,13 @@ export function WeekStrip({ selected, onSelect }: Props) {
             const tl = timeline(h, idx, days[0], days[6], ctx);
             const p = progress(h, idx, days, ctx);
             const text =
-              h.habit_kind === 'avoid' ? '' : p.target != null ? `${p.done}/${p.target}` : p.pct == null ? '—' : `${Math.round(p.pct * 100)}%`;
+              h.habit_kind === 'avoid'
+                ? ''
+                : p.target != null
+                  ? `${p.done}/${p.target}`
+                  : p.pct == null
+                    ? '—'
+                    : `${Math.round(p.pct * 100)}%`;
             return (
               <View key={h.id} style={s.gridRow}>
                 <Text style={s.gridName} numberOfLines={1}>
@@ -137,8 +144,14 @@ export function WeekStrip({ selected, onSelect }: Props) {
                 </Text>
                 <View style={s.gridCells}>
                   {days.map((d) => (
-                    <Pressable key={d} disabled={d > ctx.today} onPress={() => onSelect(d)} style={s.gridCell} hitSlop={2}>
-                      <Dot state={tl.states.get(d) ?? 'none'} size={14} />
+                    <Pressable
+                      key={d}
+                      disabled={d > ctx.today}
+                      onPress={() => onSelect(d)}
+                      style={s.gridCell}
+                      hitSlop={2}
+                    >
+                      <Dot state={tl.states.get(d) ?? 'none'} size={13} />
                     </Pressable>
                   ))}
                 </View>
@@ -187,7 +200,14 @@ function rangeLabel(a: string, b: string): string {
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
-    card: { backgroundColor: t.surface, borderRadius: 14, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 8, marginTop: 14 },
+    card: {
+      backgroundColor: t.surface,
+      borderRadius: 14,
+      paddingHorizontal: 10,
+      paddingTop: 10,
+      paddingBottom: 8,
+      marginTop: 14,
+    },
     head: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 },
     chev: { fontSize: 22, color: t.accent, lineHeight: 24, paddingHorizontal: 2 },
     label: { fontSize: 14, fontWeight: '600', color: t.text },
@@ -203,10 +223,10 @@ const makeStyles = (t: Theme) =>
     grid: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border, marginTop: 8, paddingTop: 6 },
     gridEmpty: { fontSize: 13, color: t.textMuted, padding: 6 },
     gridRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 4 },
-    gridName: { width: 92, fontSize: 13, color: t.text },
+    gridName: { width: NAME_W, fontSize: 13, color: t.text, paddingRight: 6 },
     gridCells: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
     gridCell: { padding: 2 },
-    gridHead: { width: 18, textAlign: 'center', fontSize: 11, fontWeight: '600', color: t.textMuted },
+    gridHead: { width: 16, textAlign: 'center', fontSize: 11, fontWeight: '600', color: t.textMuted },
     gridHeadPct: { fontSize: 11 },
-    gridPct: { width: 40, textAlign: 'right', fontSize: 12, color: t.textMuted, fontVariant: ['tabular-nums'] },
+    gridPct: { width: 36, textAlign: 'right', fontSize: 12, color: t.textMuted, fontVariant: ['tabular-nums'] },
   });

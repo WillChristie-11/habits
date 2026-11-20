@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
+import type { SwipeAction } from './SwipeRow';
 import { behindPace, sectionPassed } from '../lib/reminders';
 import { FeelingPicker } from './FeelingPicker';
 import { MotivationSheet } from './MotivationSheet';
@@ -17,7 +18,7 @@ import { HabitDetail } from '../screens/HabitDetail';
  * Returns the handlers plus the sheets to render once at the bottom of the screen.
  */
 export function useHabitActions(date?: string) {
-  const { idx, ctx, settings, mark, unmark, rateFeeling, removeHabit } = useStore();
+  const { habits, idx, ctx, settings, mark, unmark, rateFeeling, removeHabit } = useStore();
   const day = date ?? ctx.today;
   const isToday = day === ctx.today;
   const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind } | null>(null);
@@ -67,65 +68,57 @@ export function useHabitActions(date?: string) {
     [day],
   );
 
+  /** The header's ＋: Habit / Anchor / Activity. */
+  const openChooser = useCallback(() => {
+    const kinds: ItemKind[] = ['habit', 'anchor', 'activity'];
+    const labels = ['Habit', 'Anchor', 'Activity'];
+    if (Platform.OS === 'web') return setForm({ habit: null, kind: 'habit' }); // no action sheets on web
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: 'Add', options: [...labels, 'Cancel'], cancelButtonIndex: 3 },
+        (i) => i < 3 && setForm({ habit: null, kind: kinds[i] }),
+      );
+    } else {
+      Alert.alert('Add', undefined, [
+        ...kinds.map((k, i) => ({ text: labels[i], onPress: () => setForm({ habit: null, kind: k }) })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]);
+    }
+  }, []);
+
   const onOpen = useCallback(
     (h: Habit) => {
-      if (h.kind === 'anchor') {
-        // Long-press on an activity: get ready for it, or edit it.
-        if (Platform.OS === 'ios' && isToday) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-          ActionSheetIOS.showActionSheetWithOptions(
-            { title: h.name, options: [`Get ready (${h.ready_minutes} min)`, 'Edit', 'Cancel'], cancelButtonIndex: 2 },
-            (i) => {
-              if (i === 0) getReady(h);
-              if (i === 1) setForm({ habit: h, kind: 'anchor' });
-            },
-          );
-          return;
-        }
-        return setForm({ habit: h, kind: 'anchor' });
-      }
+      if (h.kind === 'anchor') return setForm({ habit: h, kind: 'anchor' });
       // Today, unchecked, and its part of the day has passed → show why / minimum first.
       if (isToday && stateOn(h, idx, ctx.today, ctx) === 'pending') {
         const behind = behindPace([h], idx, ctx).length > 0;
         const has = h.why || h.minimum_version || h.messages.length || settings.reminders.messages.length;
-        if (has && sectionPassed(h, settings.reminders, new Date(), behind)) return setMotivation(h);
+        if (has && sectionPassed(h, habits, settings.reminders, new Date(), behind)) return setMotivation(h);
       }
       setDetail(h);
     },
-    [isToday, idx, ctx, settings.reminders, getReady],
+    [isToday, idx, ctx, habits, settings.reminders],
   );
 
-  const onDelete = useCallback(
-    (h: Habit) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-      removeHabit(h.id);
-    },
-    [removeHabit],
-  );
+  const onDelete = useCallback((h: Habit) => removeHabit(h.id), [removeHabit]);
 
-  const onLongPress = useCallback(
-    (h: Habit) => {
+  /** Swipe right on a row: Skip (or Undo skip) and Get ready; anchors also get Edit. */
+  const swipeActions = useCallback(
+    (h: Habit): SwipeAction[] => {
       const skipped = stateOn(h, idx, day, ctx) === 'skipped';
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      const action = skipped ? 'Undo skip' : isToday ? 'Skip today (rest day)' : 'Mark as rest day';
-      const run = () => (skipped ? unmark(h.id, day) : mark(h.id, 'skipped', day));
-      const ready = `Get ready (${h.ready_minutes} min)`;
-      if (Platform.OS === 'ios') {
-        const options = isToday ? [ready, action, 'Details', 'Cancel'] : [action, 'Details', 'Cancel'];
-        ActionSheetIOS.showActionSheetWithOptions({ title: h.name, options, cancelButtonIndex: options.length - 1 }, (i) => {
-          const picked = options[i];
-          if (picked === ready) getReady(h);
-          else if (picked === action) run();
-          else if (picked === 'Details') setDetail(h);
-        });
-      } else {
-        Alert.alert(h.name, undefined, [
-          ...(isToday ? [{ text: ready, onPress: () => getReady(h) }] : []),
-          { text: action, onPress: run },
-          { text: 'Details', onPress: () => setDetail(h) },
-          { text: 'Cancel', style: 'cancel' as const },
-        ]);
-      }
+      const out: SwipeAction[] = [
+        {
+          label: skipped ? 'Undo skip' : 'Skip',
+          onPress: () => {
+            Haptics.selectionAsync().catch(() => {});
+            if (skipped) unmark(h.id, day);
+            else mark(h.id, 'skipped', day);
+          },
+        },
+      ];
+      if (isToday) out.push({ label: 'Get ready', tone: 'accent', onPress: () => getReady(h) });
+      if (h.kind === 'anchor') out.push({ label: 'Edit', onPress: () => setForm({ habit: h, kind: 'anchor' }) });
+      return out;
     },
     [idx, ctx, day, isToday, mark, unmark, getReady],
   );
@@ -192,5 +185,5 @@ export function useHabitActions(date?: string) {
     </>
   );
 
-  return { onToggle, onOpen, onLongPress, onDelete, openForm, startTimer, getReady, overlays };
+  return { onToggle, onOpen, onDelete, swipeActions, openForm, openChooser, startTimer, getReady, overlays };
 }

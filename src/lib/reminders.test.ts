@@ -4,7 +4,21 @@ import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
 import { indexRecords, missedTwiceRisk, todayCompletion } from './schedule';
-import { avoidLine, banners, checkinTimes, checkinCandidates, paceText, ifThenLine, obstacleLine, suggestPlanWhen, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
+import {
+  avoidLine,
+  banners,
+  checkinTimes,
+  checkinCandidates,
+  paceText,
+  ifThenLine,
+  obstacleLine,
+  suggestPlanWhen,
+  behindPace,
+  pickMessage,
+  planNotifications,
+  sectionPassed,
+  MAX_SCHEDULED,
+} from './reminders';
 
 const TODAY = '2026-11-19'; // Thursday
 const ctx = { today: TODAY };
@@ -18,7 +32,6 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     id: nextId++,
     kind: 'habit',
     name: `h${nextId}`,
-    section: 'morning',
     why: null,
     minimum_version: null,
     messages: [],
@@ -62,7 +75,13 @@ test('item reminders: today + tomorrow, minus lead time, skipped when done or in
   const wake = habit(daily, { kind: 'anchor', name: 'Wake', scheduled_time: '07:00', reminder: true });
   const pills = habit(daily, { name: 'Pills', scheduled_time: '13:00', reminder: true, remind_before: 10 });
   const quiet = habit(daily, { name: 'Quiet', scheduled_time: '15:00', reminder: false });
-  const plan = planNotifications([wake, pills, quiet], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('09:00'));
+  const plan = planNotifications(
+    [wake, pills, quiet],
+    indexRecords([]),
+    ctx,
+    { ...R, morningEnabled: false, eveningEnabled: false },
+    at('09:00'),
+  );
   assert.deepEqual(
     plan.map((p) => [p.id, p.at.toTimeString().slice(0, 5)]),
     [
@@ -73,17 +92,27 @@ test('item reminders: today + tomorrow, minus lead time, skipped when done or in
   );
   assert.equal(plan[0].category, 'item');
   // done today → only tomorrow's
-  const plan2 = planNotifications([pills], indexRecords([rec(pills, TODAY)]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('09:00'));
-  assert.deepEqual(plan2.map((p) => p.data.date), ['2026-11-20']);
+  const plan2 = planNotifications(
+    [pills],
+    indexRecords([rec(pills, TODAY)]),
+    ctx,
+    { ...R, morningEnabled: false, eveningEnabled: false },
+    at('09:00'),
+  );
+  assert.deepEqual(
+    plan2.map((p) => p.data.date),
+    ['2026-11-20'],
+  );
 });
 
-test('morning reminder lists unfinished morning habits; evening nudge flags never-miss-twice first', () => {
-  const med = habit(daily, { name: 'Meditate' });
-  const read = habit(daily, { name: 'Read', section: 'evening' });
-  const floss = habit(daily, { name: 'Floss', section: 'evening', minimum_version: 'one tooth' });
+test('morning reminder lists habits under morning anchors; evening nudge flags never-miss-twice first', () => {
+  const wake = habit(daily, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
+  const med = habit(daily, { name: 'Meditate', stack_after: wake.id });
+  const read = habit(daily, { name: 'Read' });
+  const floss = habit(daily, { name: 'Floss', minimum_version: 'one tooth' });
   // Floss missed yesterday (no record on the 18th), Read done yesterday
   const idx = indexRecords([rec(read, '2026-11-18'), rec(med, '2026-11-18')]);
-  const plan = planNotifications([med, read, floss], idx, ctx, R, at('06:00'));
+  const plan = planNotifications([wake, med, read, floss], idx, ctx, R, at('06:00'));
   const morning = plan.find((p) => p.id === `morning-${TODAY}`)!;
   assert.equal(morning.at.toTimeString().slice(0, 5), '07:30');
   assert.equal(morning.body, '1 to do: Meditate');
@@ -99,7 +128,10 @@ test('evening nudge is dropped when everything is done; morning one when dismiss
   const plan = planNotifications([med], idx, ctx, R, at('06:00'));
   assert.equal(plan.filter((p) => p.data.date === TODAY).length, 0);
   const plan2 = planNotifications([med], indexRecords([]), ctx, { ...R, morningDismissedOn: TODAY }, at('06:00'));
-  assert.deepEqual(plan2.filter((p) => p.data.date === TODAY).map((p) => p.data.type), ['evening']);
+  assert.deepEqual(
+    plan2.filter((p) => p.data.date === TODAY).map((p) => p.data.type),
+    ['evening'],
+  );
 });
 
 test('paused habits get no notifications', () => {
@@ -108,9 +140,17 @@ test('paused habits get no notifications', () => {
 });
 
 test('snoozes are scheduled until done; never more than the iOS cap', () => {
-  const h = habit(daily, { name: 'Stretch', section: 'evening' });
-  const r = { ...R, morningEnabled: false, eveningEnabled: false, snoozes: [{ habitId: h.id, date: TODAY, at: at('09:30').toISOString() }] };
-  assert.deepEqual(planNotifications([h], indexRecords([]), ctx, r, at('09:00')).map((p) => p.id), [`snooze-${h.id}-${TODAY}`]);
+  const h = habit(daily, { name: 'Stretch' });
+  const r = {
+    ...R,
+    morningEnabled: false,
+    eveningEnabled: false,
+    snoozes: [{ habitId: h.id, date: TODAY, at: at('09:30').toISOString() }],
+  };
+  assert.deepEqual(
+    planNotifications([h], indexRecords([]), ctx, r, at('09:00')).map((p) => p.id),
+    [`snooze-${h.id}-${TODAY}`],
+  );
   assert.deepEqual(planNotifications([h], indexRecords([rec(h, TODAY)]), ctx, r, at('09:00')), []);
 
   const many = Array.from({ length: 50 }, (_, i) =>
@@ -120,7 +160,7 @@ test('snoozes are scheduled until done; never more than the iOS cap', () => {
 });
 
 test('behind pace: 0/2 with 3 days left warns, 1/2 with 3 days left does not', () => {
-  const lift = habit({ type: 'weekly_count', count: 2 }, { section: 'week' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, {});
   const fri = { today: '2026-11-20' };
   assert.equal(behindPace([lift], indexRecords([]), fri).length, 1);
   assert.equal(behindPace([lift], indexRecords([rec(lift, '2026-11-17')]), fri).length, 0);
@@ -128,29 +168,41 @@ test('behind pace: 0/2 with 3 days left warns, 1/2 with 3 days left does not', (
 });
 
 test('banners: morning from its time until dismissed; evening turns late after the deadline', () => {
-  const med = habit(daily, { name: 'Meditate' });
-  const idx = indexRecords([]);
-  assert.deepEqual(banners([med], idx, ctx, R, at('07:00')).map((b) => b.kind), []);
-  assert.deepEqual(banners([med], idx, ctx, R, at('08:00')).map((b) => b.kind), ['morning']);
-  assert.deepEqual(banners([med], idx, ctx, { ...R, morningDismissedOn: TODAY }, at('08:00')), []);
-  const late = banners([med], idx, ctx, { ...R, morningDismissedOn: TODAY }, at('22:15'));
+  const wake = habit(daily, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
+  const med = habit(daily, { name: 'Meditate', stack_after: wake.id });
+  const idx = indexRecords([rec(wake, TODAY)]);
+  assert.deepEqual(
+    banners([wake, med], idx, ctx, R, at('07:00')).map((b) => b.kind),
+    [],
+  );
+  assert.deepEqual(
+    banners([wake, med], idx, ctx, R, at('08:00')).map((b) => b.kind),
+    ['morning'],
+  );
+  assert.deepEqual(banners([wake, med], idx, ctx, { ...R, morningDismissedOn: TODAY }, at('08:00')), []);
+  const late = banners([wake, med], idx, ctx, { ...R, morningDismissedOn: TODAY }, at('22:15'));
   assert.equal(late[0].kind, 'evening');
   assert.equal(late[0].kind === 'evening' && late[0].late, true);
-  const early = banners([med], idx, ctx, { ...R, morningDismissedOn: TODAY }, at('20:30'));
+  const early = banners([wake, med], idx, ctx, { ...R, morningDismissedOn: TODAY }, at('20:30'));
   assert.equal(early[0].kind === 'evening' && early[0].minutesLeft, 90);
   // not dismissed: the evening nudge replaces the morning banner instead of stacking
-  assert.deepEqual(banners([med], idx, ctx, R, at('20:30')).map((b) => b.kind), ['evening']);
+  assert.deepEqual(
+    banners([wake, med], idx, ctx, R, at('20:30')).map((b) => b.kind),
+    ['evening'],
+  );
 });
 
-test('section passed: timed after its time, morning after noon, evening at nudge start', () => {
+test('section passed: timed after its time, morning anchor after noon, anytime at nudge start', () => {
+  const wake = habit(daily, { kind: 'anchor', scheduled_time: '07:00' });
   const t = habit(daily, { scheduled_time: '08:15' });
-  const m = habit(daily);
-  const e = habit(daily, { section: 'evening' });
-  assert.equal(sectionPassed(t, R, at('08:20'), false), true);
-  assert.equal(sectionPassed(m, R, at('11:59'), false), false);
-  assert.equal(sectionPassed(m, R, at('12:00'), false), true);
-  assert.equal(sectionPassed(e, R, at('19:59'), false), false);
-  assert.equal(sectionPassed(e, R, at('20:00'), false), true);
+  const m = habit(daily, { stack_after: wake.id });
+  const e = habit(daily);
+  const all = [wake, t, m, e];
+  assert.equal(sectionPassed(t, all, R, at('08:20'), false), true);
+  assert.equal(sectionPassed(m, all, R, at('11:59'), false), false);
+  assert.equal(sectionPassed(m, all, R, at('12:00'), false), true);
+  assert.equal(sectionPassed(e, all, R, at('19:59'), false), false);
+  assert.equal(sectionPassed(e, all, R, at('20:00'), false), true);
 });
 
 test('motivational messages rotate daily through why, own messages, then the general list', () => {
@@ -168,9 +220,21 @@ test('motivational messages rotate daily through why, own messages, then the gen
 });
 
 test('avoid habits get a "Start N min" notification button; want habits get Done', () => {
-  const apply = habit(daily, { name: 'Apply', habit_kind: 'avoid', session_minutes: 20, scheduled_time: '18:00', reminder: true });
+  const apply = habit(daily, {
+    name: 'Apply',
+    habit_kind: 'avoid',
+    session_minutes: 20,
+    scheduled_time: '18:00',
+    reminder: true,
+  });
   const read = habit(daily, { name: 'Read', scheduled_time: '21:00', reminder: true });
-  const plan = planNotifications([apply, read], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'));
+  const plan = planNotifications(
+    [apply, read],
+    indexRecords([]),
+    ctx,
+    { ...R, morningEnabled: false, eveningEnabled: false },
+    at('06:00'),
+  );
   const cat = (h: Habit) => plan.find((p) => p.id === `item-${h.id}-${TODAY}`)!.category;
   assert.equal(cat(apply), 'start-20');
   assert.equal(cat(read), 'item');
@@ -185,16 +249,17 @@ test('avoid wording: time box + next step, pair-with as a question, "of" form wi
 });
 
 test('avoid habits: never counted, flagged or behind pace; own lines in the nudges', () => {
-  const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', session_minutes: 20 });
-  const w = habit(daily, { name: 'Read', section: 'evening' });
-  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'Lift', section: 'week', habit_kind: 'avoid' });
-  const idx = indexRecords([]); // both missed yesterday
+  const wake = habit(daily, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
+  const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', session_minutes: 20, stack_after: wake.id });
+  const w = habit(daily, { name: 'Read' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'Lift', habit_kind: 'avoid' });
+  const idx = indexRecords([rec(wake, '2026-11-18'), rec(wake, TODAY)]); // Apply and Read missed yesterday
   assert.equal(missedTwiceRisk(a, idx, ctx), false);
   assert.equal(missedTwiceRisk(w, idx, ctx), true);
   assert.deepEqual(todayCompletion([a, w], idx, ctx), { done: 0, total: 1, pct: 0 });
   assert.equal(behindPace([lift], idx, { today: '2026-11-21' }).length, 0);
 
-  const plan = planNotifications([a, w], idx, ctx, R, at('06:00'));
+  const plan = planNotifications([wake, a, w], idx, ctx, R, at('06:00'));
   const evening = plan.find((p) => p.id === `evening-${TODAY}`)!;
   assert.match(evening.title, /^1 left/); // Read only
   assert.match(evening.body, /^Read ⚑\.\n20 min of Apply$/);
@@ -211,21 +276,45 @@ test('avoid habits: never counted, flagged or behind pace; own lines in the nudg
 });
 
 test('avoid item reminders lead with the time box', () => {
-  const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', scheduled_time: '18:00', reminder: true, ladder: ['Find 1 role'] });
-  const p = planNotifications([a], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'))[0];
+  const a = habit(daily, {
+    name: 'Apply',
+    habit_kind: 'avoid',
+    scheduled_time: '18:00',
+    reminder: true,
+    ladder: ['Find 1 role'],
+  });
+  const p = planNotifications(
+    [a],
+    indexRecords([]),
+    ctx,
+    { ...R, morningEnabled: false, eveningEnabled: false },
+    at('06:00'),
+  )[0];
   assert.equal(p.title, '15 min: Find 1 role');
   assert.equal(p.category, 'start-15');
 });
 
 test('if-then plan wording, prefill, and use as the reminder text', () => {
-  const h = habit(daily, { name: 'Meditate', scheduled_time: '07:30', reminder: true, plan_when: "I've poured my coffee", plan_action: 'Meditate for 2 minutes' });
+  const h = habit(daily, {
+    name: 'Meditate',
+    scheduled_time: '07:30',
+    reminder: true,
+    plan_when: "I've poured my coffee",
+    plan_action: 'Meditate for 2 minutes',
+  });
   assert.equal(ifThenLine(h), "When I've poured my coffee, I will meditate for 2 minutes.");
   assert.equal(ifThenLine({ ...h, plan_action: null }), "When I've poured my coffee, I will meditate.");
   assert.equal(ifThenLine({ ...h, plan_when: '  ' }), null);
   assert.equal(suggestPlanWhen('Breakfast', '08:00'), 'Breakfast is done');
   assert.match(suggestPlanWhen(null, '08:00'), /^it's 8:00/);
   assert.equal(suggestPlanWhen(null, null), '');
-  const p = planNotifications([h], indexRecords([]), ctx, { ...R, morningEnabled: false, eveningEnabled: false }, at('06:00'))[0];
+  const p = planNotifications(
+    [h],
+    indexRecords([]),
+    ctx,
+    { ...R, morningEnabled: false, eveningEnabled: false },
+    at('06:00'),
+  )[0];
   assert.match(p.body, /When I've poured my coffee, I will meditate for 2 minutes\.$/);
 });
 
@@ -257,10 +346,20 @@ test('check-ins pick open habits, never-miss-twice and behind-pace first; avoid 
   const apply = habit(daily, { name: 'Apply', habit_kind: 'avoid', order: 3, ladder: ['Find 1 role'] });
   const idx = indexRecords([rec(calm, '2026-11-18'), rec(apply, '2026-11-18'), rec(done, TODAY)]); // Read missed yesterday
   const pool = checkinCandidates([calm, read, done, apply], idx, ctx, TODAY);
-  assert.deepEqual(pool.map((h) => h.name), ['Read', 'Calm', 'Apply']);
+  assert.deepEqual(
+    pool.map((h) => h.name),
+    ['Read', 'Calm', 'Apply'],
+  );
 
-  const r = { ...R, morningEnabled: false, eveningEnabled: false, checkins: { enabled: true, count: 3, start: '09:00', end: '21:00', spacing: 90 } };
-  const plan = planNotifications([read, apply], idx, ctx, r, at('06:00')).filter((p) => p.id.startsWith(`checkin-${TODAY}`));
+  const r = {
+    ...R,
+    morningEnabled: false,
+    eveningEnabled: false,
+    checkins: { enabled: true, count: 3, start: '09:00', end: '21:00', spacing: 90 },
+  };
+  const plan = planNotifications([read, apply], idx, ctx, r, at('06:00')).filter((p) =>
+    p.id.startsWith(`checkin-${TODAY}`),
+  );
   assert.equal(plan.length, 3);
   assert.equal(plan[0].title, 'Still on track for Read today?');
   assert.equal(plan[0].category, 'item');
@@ -272,10 +371,16 @@ test('check-ins pick open habits, never-miss-twice and behind-pace first; avoid 
 });
 
 test('evening nudge carries behind-pace want habits as a line (never avoid habits)', () => {
-  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'Lift', section: 'week' });
-  const guitar = habit({ type: 'weekly_count', count: 3 }, { name: 'Guitar', section: 'week', habit_kind: 'avoid' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'Lift' });
+  const guitar = habit({ type: 'weekly_count', count: 3 }, { name: 'Guitar', habit_kind: 'avoid' });
   const sat = '2026-11-21';
-  const plan = planNotifications([lift, guitar], indexRecords([]), { today: sat }, { ...R, morningEnabled: false }, new Date(`${sat}T06:00:00`));
+  const plan = planNotifications(
+    [lift, guitar],
+    indexRecords([]),
+    { today: sat },
+    { ...R, morningEnabled: false },
+    new Date(`${sat}T06:00:00`),
+  );
   const ev = plan.find((p) => p.id === `evening-${sat}`)!;
   assert.equal(ev.body, 'Lift: 0/2, 2 days left');
   assert.match(ev.title, /^This week · 2 h until/);
@@ -283,7 +388,7 @@ test('evening nudge carries behind-pace want habits as a line (never avoid habit
 });
 
 test('activities are never expected, missed, flagged, counted or nudged', () => {
-  const run = habit(daily, { kind: 'activity', name: 'Run', unit: 'mi', section: 'week' });
+  const run = habit(daily, { kind: 'activity', name: 'Run', unit: 'mi' });
   const idx = indexRecords([]);
   assert.deepEqual(todayCompletion([run], idx, ctx), { done: 0, total: 0, pct: 0 });
   assert.equal(missedTwiceRisk(run, idx, ctx), false);

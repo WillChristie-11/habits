@@ -8,7 +8,9 @@ import {
   indexRecords,
   missedTwiceRisk,
   progress,
-  sectionRows,
+  todayGroups,
+  isMorning,
+  groupLabel,
   timeline,
   todayCompletion,
   visibleToday,
@@ -29,7 +31,6 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     id: nextId++,
     kind: 'habit',
     name: 'h',
-    section: 'morning',
     why: null,
     minimum_version: null,
     messages: [],
@@ -59,7 +60,12 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     ...extra,
   };
 }
-const rec = (h: Habit, date: string, status: DayRecord['status'] = 'done', feeling: number | null = null): DayRecord => ({
+const rec = (
+  h: Habit,
+  date: string,
+  status: DayRecord['status'] = 'done',
+  feeling: number | null = null,
+): DayRecord => ({
   habit_id: h.id,
   date,
   status,
@@ -74,7 +80,15 @@ test('date helpers: Monday-start weeks, diffs across DST', () => {
   assert.deepEqual(weekDays(TODAY).at(-1), '2026-11-22');
   assert.equal(diffDays('2026-11-01', '2026-11-02'), 1); // US DST change day
   assert.equal(addDays('2026-03-08', 1), '2026-03-09');
-  assert.deepEqual(last7(TODAY), ['2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18', TODAY]);
+  assert.deepEqual(last7(TODAY), [
+    '2026-11-13',
+    '2026-11-14',
+    '2026-11-15',
+    '2026-11-16',
+    '2026-11-17',
+    '2026-11-18',
+    TODAY,
+  ]);
 });
 
 test('daily: done / missed / pending / skipped, nothing before creation', () => {
@@ -180,7 +194,7 @@ test('stacked habits sit under their anchor; cycles fall back to flat', () => {
   const a = habit({ type: 'daily' }, { order: 0, name: 'coffee' });
   const b = habit({ type: 'daily' }, { order: 1, name: 'walk' });
   const c = habit({ type: 'daily' }, { order: 2, name: 'meditate', stack_after: a.id });
-  const rows = sectionRows([a, b, c], 'morning', () => true);
+  const rows = layoutDay([a, b, c], () => true).sections.anytime;
   assert.deepEqual(
     rows.map((r) => [r.habit.name, r.depth]),
     [
@@ -192,17 +206,23 @@ test('stacked habits sit under their anchor; cycles fall back to flat', () => {
   const x = habit({ type: 'daily' }, { order: 0, name: 'x' });
   const y = habit({ type: 'daily' }, { order: 1, name: 'y', stack_after: x.id });
   x.stack_after = y.id;
-  assert.equal(sectionRows([x, y], 'morning', () => true).length, 2);
+  assert.equal(layoutDay([x, y], () => true).sections.anytime.length, 2);
 });
 
 test('timeline: anchors + scheduled habits by time; stacked habits follow their anchor', () => {
   const wake = habit({ type: 'daily' }, { kind: 'anchor', name: 'wake', scheduled_time: '07:00' });
-  const work = habit({ type: 'specific_days', days: [1, 2, 3, 4, 5] }, { kind: 'anchor', name: 'work', scheduled_time: '09:00', end_time: '17:00' });
-  const weekendBrunch = habit({ type: 'specific_days', days: [0, 6] }, { kind: 'anchor', name: 'brunch', scheduled_time: '10:00' });
-  const water = habit({ type: 'daily' }, { name: 'water', stack_after: wake.id, section: 'morning' });
+  const work = habit(
+    { type: 'specific_days', days: [1, 2, 3, 4, 5] },
+    { kind: 'anchor', name: 'work', scheduled_time: '09:00', end_time: '17:00' },
+  );
+  const weekendBrunch = habit(
+    { type: 'specific_days', days: [0, 6] },
+    { kind: 'anchor', name: 'brunch', scheduled_time: '10:00' },
+  );
+  const water = habit({ type: 'daily' }, { name: 'water', stack_after: wake.id });
   const pills = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15' });
-  const read = habit({ type: 'daily' }, { name: 'read', section: 'evening' });
-  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'lift', section: 'week', scheduled_time: '18:00' }); // weekly ignores time
+  const read = habit({ type: 'daily' }, { name: 'read' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'lift', scheduled_time: '18:00' }); // weekly ignores time
   const all = [read, work, pills, water, wake, weekendBrunch, lift];
   const idx = indexRecords([]);
   const l = layoutDay(all, (h) => visibleToday(h, idx, ctx));
@@ -215,9 +235,14 @@ test('timeline: anchors + scheduled habits by time; stacked habits follow their 
       ['work', 0],
     ],
   );
-  assert.deepEqual(l.sections.evening.map((r) => r.habit.name), ['read']);
-  assert.deepEqual(l.sections.week.map((r) => r.habit.name), ['lift']);
-  assert.deepEqual(l.sections.morning, []);
+  assert.deepEqual(
+    l.sections.anytime.map((r) => r.habit.name),
+    ['read'],
+  );
+  assert.deepEqual(
+    l.sections.week.map((r) => r.habit.name),
+    ['lift'],
+  );
 });
 
 test('timeline focus: Now inside a window, else Next; done items are passed over', () => {
@@ -248,15 +273,59 @@ test('week summary sums habits (weekly_count capped at target) and ignores ancho
   const w = habit({ type: 'weekly_count', count: 2 }); // 3 sessions → counts 2/2
   const anchor = habit({ type: 'daily' }, { kind: 'anchor', scheduled_time: '07:00' });
   const later = habit({ type: 'daily' }, { created_at: '2026-12-01T08:00:00' });
-  const idx = indexRecords([rec(a, '2026-11-16'), rec(w, '2026-11-16'), rec(w, '2026-11-17'), rec(w, '2026-11-18'), rec(anchor, '2026-11-16')]);
+  const idx = indexRecords([
+    rec(a, '2026-11-16'),
+    rec(w, '2026-11-16'),
+    rec(w, '2026-11-17'),
+    rec(w, '2026-11-18'),
+    rec(anchor, '2026-11-16'),
+  ]);
   assert.deepEqual(periodSummary([a, w, anchor, later], idx, weekDays(TODAY), ctx), { done: 3, expected: 5, pct: 0.6 });
 });
 
-test('plain list layout (timeline off) keeps timed habits in their section', () => {
-  const t = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15', section: 'morning' });
-  const l = layoutDay([t], () => true, { timeline: false });
-  assert.deepEqual(l.timeline, []);
-  assert.deepEqual(l.sections.morning.map((r) => r.habit.name), ['pills']);
+test('Today groups: anchors in time order with their habits, then Anytime and This week', () => {
+  const work = habit({ type: 'daily' }, { kind: 'anchor', name: 'Work', scheduled_time: '09:00' });
+  const wake = habit({ type: 'daily' }, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
+  const water = habit({ type: 'daily' }, { name: 'water', stack_after: wake.id });
+  const vit = habit({ type: 'daily' }, { name: 'vitamins', stack_after: water.id });
+  const pills = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15' }); // timed, no anchor
+  const read = habit({ type: 'daily' }, { name: 'read' });
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'lift', stack_after: work.id }); // weekly wins
+  const all = [read, work, pills, vit, water, wake, lift];
+  const g = todayGroups(all, () => true);
+  assert.deepEqual(
+    g.anchors.map((a) => [a.anchor.name, a.rows.map((r) => [r.habit.name, r.depth])]),
+    [
+      [
+        'Wake up',
+        [
+          ['water', 0],
+          ['vitamins', 1],
+        ],
+      ],
+      ['Work', []],
+    ],
+  );
+  assert.deepEqual(
+    g.anytime.map((r) => r.habit.name),
+    ['pills', 'read'],
+  );
+  assert.deepEqual(
+    g.week.map((r) => r.habit.name),
+    ['lift'],
+  );
+  assert.equal(isMorning(vit, all), true);
+  assert.equal(isMorning(pills, all), true);
+  assert.equal(isMorning(read, all), false);
+  assert.equal(groupLabel(vit, all), 'After Wake up');
+  assert.equal(groupLabel(read, all), 'Anytime');
+  assert.equal(groupLabel(lift, all), 'This week');
+  // An anchor that isn't on today: its habits fall back to Anytime.
+  const g2 = todayGroups(all, (h) => h !== wake);
+  assert.deepEqual(
+    g2.anytime.map((r) => r.habit.name),
+    ['water', 'vitamins', 'pills', 'read'],
+  );
 });
 
 test('fresh installs start with three editable daily anchors', async () => {

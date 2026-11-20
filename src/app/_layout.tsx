@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { StoreProvider, useStore } from '../store';
@@ -38,8 +39,10 @@ function ThemedStack() {
 
 export default function RootLayout() {
   return (
-    <StoreProvider>
-      <ThemedStack />
-    </StoreProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <StoreProvider>
+        <ThemedStack />
+      </StoreProvider>
+    </GestureHandlerRootView>
   );
 }

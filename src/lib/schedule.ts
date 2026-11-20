@@ -1,4 +1,4 @@
-import type { DayRecord, DayState, Habit, Section } from '../types';
+import type { Bucket, DayRecord, DayState, Habit } from '../types';
 import { FEELINGS } from '../types';
 import { addDays, diffDays, range, toKey, weekday } from './dates';
 
@@ -215,9 +215,41 @@ export interface Row {
 export const onTimeline = placedOnTimeline;
 
 export interface DayLayout {
-  /** anchors + scheduled habits by time, each followed by what's stacked on it */
+  /** anchors (+ scheduled habits on the Schedule tab) by time, each followed by what's stacked on it */
   timeline: Row[];
-  sections: Record<Section, Row[]>;
+  /** Habits under no visible anchor: Anytime; weekly_count / every_n_days: This week. */
+  sections: Record<Bucket, Row[]>;
+}
+
+export const isWeekly = (h: Habit) => h.frequency.type === 'weekly_count' || h.frequency.type === 'every_n_days';
+
+/** The anchor a habit ends up under by following stack_after (null if none, or a loop). */
+export function rootAnchor(h: Habit, habits: Habit[]): Habit | null {
+  const byId = new Map(habits.map((x) => [x.id, x]));
+  const seen = new Set<number>([h.id]);
+  let cur = h;
+  while (cur.stack_after != null) {
+    const next = byId.get(cur.stack_after);
+    if (!next || seen.has(next.id)) return null;
+    if (next.kind === 'anchor') return next;
+    seen.add(next.id);
+    cur = next;
+  }
+  return null;
+}
+
+/** Morning = under an anchor before noon (or timed before noon). Drives the morning reminder. */
+export function isMorning(h: Habit, habits: Habit[]): boolean {
+  if (h.kind !== 'habit' || isWeekly(h)) return false;
+  const t = h.scheduled_time ?? rootAnchor(h, habits)?.scheduled_time ?? null;
+  return t != null && toMinutes(t) < 12 * 60;
+}
+
+/** "After Wake up" · "Anytime" · "This week" */
+export function groupLabel(h: Habit, habits: Habit[]): string {
+  if (isWeekly(h)) return 'This week';
+  const a = rootAnchor(h, habits);
+  return a ? `After ${a.name}` : 'Anytime';
 }
 
 /** Anchors, and daily / specific-days habits with a scheduled time, live on the timeline. */
@@ -229,22 +261,25 @@ export function placedOnTimeline(h: Habit): boolean {
 const byOrder = (a: Habit, b: Habit) => a.order - b.order || a.id - b.id;
 
 /**
- * Place a day's items. Precedence: own scheduled time → timeline; stacked on a visible item →
- * directly under it (wherever that is); otherwise the habit's section. Stacking cycles fall back
- * to flat section rows.
+ * Place a day's items. Precedence: weekly kinds → This week; on the timeline (anchors, plus timed
+ * habits on the Schedule tab) → by time; stacked on a visible item → directly under it;
+ * otherwise Anytime. Stacking cycles fall back to flat rows.
+ * timeline 'anchors' (Today): only anchors are timeline roots; timed habits without an anchor
+ * go to Anytime.
  */
 export function layoutDay(
   habits: Habit[],
   visible: (h: Habit) => boolean,
-  opts: { timeline?: boolean } = {},
+  opts: { timeline?: boolean | 'anchors' } = {},
 ): DayLayout {
-  // timeline:false = a plain habit list (Today tab): timed habits stay in their section.
-  const useTimeline = opts.timeline ?? true;
-  const onTimeline = (h: Habit) => useTimeline && placedOnTimeline(h);
+  const mode = opts.timeline ?? true;
+  const onTimeline = (h: Habit) =>
+    mode === 'anchors' ? h.kind === 'anchor' : mode ? !isWeekly(h) && placedOnTimeline(h) : false;
+  const bucket = (h: Habit): Bucket => (isWeekly(h) ? 'week' : 'anytime');
   const list = habits.filter(visible).sort(byOrder);
   const byId = new Map(list.map((h) => [h.id, h]));
   const parentOf = (h: Habit): Habit | null => {
-    if (onTimeline(h) || h.stack_after == null || h.stack_after === h.id) return null;
+    if (onTimeline(h) || isWeekly(h) || h.stack_after == null || h.stack_after === h.id) return null;
     return byId.get(h.stack_after) ?? null;
   };
   const children = new Map<number, Habit[]>();
@@ -266,19 +301,31 @@ export function layoutDay(
   };
 
   const timeline: Row[] = [];
-  const sections: Record<Section, Row[]> = { morning: [], evening: [], week: [] };
+  const sections: Record<Bucket, Row[]> = { anytime: [], week: [] };
   roots
     .filter(onTimeline)
     .sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? '') || byOrder(a, b))
     .forEach((h) => visit(timeline, h, 0, null));
-  roots.filter((h) => !onTimeline(h)).forEach((h) => visit(sections[h.section], h, 0, null));
-  list.forEach((h) => visit(sections[h.section], h, 0, null)); // cycle leftovers
+  roots.filter((h) => !onTimeline(h)).forEach((h) => visit(sections[bucket(h)], h, 0, null));
+  list.forEach((h) => visit(sections[bucket(h)], h, 0, null)); // cycle leftovers
   return { timeline, sections };
 }
 
-/** Kept for callers that only need one section. */
-export function sectionRows(habits: Habit[], section: Section, visible: (h: Habit) => boolean): Row[] {
-  return layoutDay(habits, visible).sections[section];
+export interface AnchorGroup {
+  anchor: Habit;
+  /** habits stacked under it (depth counted from the anchor's children = 0) */
+  rows: Row[];
+}
+
+/** Today: one group per anchor in time order, then Anytime and This week. */
+export function todayGroups(habits: Habit[], visible: (h: Habit) => boolean) {
+  const l = layoutDay(habits, visible, { timeline: 'anchors' });
+  const anchors: AnchorGroup[] = [];
+  for (const r of l.timeline) {
+    if (r.depth === 0) anchors.push({ anchor: r.habit, rows: [] });
+    else anchors[anchors.length - 1].rows.push({ ...r, depth: r.depth - 1 });
+  }
+  return { anchors, anytime: l.sections.anytime, week: l.sections.week };
 }
 
 export function toMinutes(hm: string): number {
