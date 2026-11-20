@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useFonts, Lora_400Regular } from '@expo-google-fonts/lora';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { StoreProvider, useStore } from '../store';
@@ -12,14 +11,12 @@ import { NotificationBridge } from '../components/NotificationBridge';
 function ThemedStack() {
   const { ready } = useStore();
   const t = useTheme();
-  // Lora is only for Journal text; don't hold the app back if it fails to load.
-  const [fontsLoaded, fontError] = useFonts({ Lora_400Regular });
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(t.background).catch(() => {});
   }, [t.background]);
 
-  if (!ready || (!fontsLoaded && !fontError)) {
+  if (!ready) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
         <ActivityIndicator color={t.accent} />

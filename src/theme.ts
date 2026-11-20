@@ -17,8 +17,12 @@ export interface Theme {
   border: string;
   /** text/icons drawn on top of `accent` */
   onAccent: string;
-  /** subtle fill for highlighted rows */
+  /** subtle tint (translucent) for highlights drawn over a surface */
   accentSoft: string;
+  /** opaque highlighted row fill (rows must be opaque so swipe actions never show through) */
+  rowHighlight: string;
+  /** Journal page text: softer than `text` */
+  journalText: string;
   /** pressed / secondary control fill */
   muted: string;
   shadow: string;
@@ -38,6 +42,19 @@ export const status = {
   onStatus: '#FFFFFF',
 } as const;
 
+/** Activity tile colours (chosen per activity). Shared by both themes; white icons sit on them. */
+export const tileColors = [
+  '#2F6B4F', // green
+  '#3E7CB1', // blue
+  '#7A5FB0', // purple
+  '#C0576B', // rose
+  '#D9822B', // orange
+  '#B8952A', // ochre
+  '#3A9C9B', // teal
+  '#6B7280', // slate
+] as const;
+export const onTile = '#FFFFFF';
+
 export const themes = {
   forest: {
     id: 'forest',
@@ -52,6 +69,8 @@ export const themes = {
     border: '#E3E1D9',
     onAccent: '#FFFFFF',
     accentSoft: 'rgba(47,107,79,0.10)',
+    rowHighlight: '#EAF0ED',
+    journalText: '#3A443E',
     muted: '#ECEBE5',
     shadow: '#000000',
     scrim: 'rgba(0,0,0,0.30)',
@@ -69,6 +88,8 @@ export const themes = {
     border: '#2A303B',
     onAccent: '#12151B',
     accentSoft: 'rgba(122,162,247,0.14)',
+    rowHighlight: '#293246',
+    journalText: '#D3D7DE',
     muted: '#262B36',
     shadow: '#000000',
     scrim: 'rgba(0,0,0,0.55)',
