@@ -3,7 +3,7 @@ import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
-import { dayCompletion, periodSummary, progress, timeline, todayGroups, visibleOn } from '../lib/schedule';
+import { counts, dayCompletion, periodSummary, progress, timeline, todayGroups, visibleOn } from '../lib/schedule';
 import { WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { Dot } from './Dots';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
@@ -53,12 +53,12 @@ export function WeekStrip({ selected, onSelect }: Props) {
   const label = isCurrentWeek ? 'This week' : rangeLabel(days[0], days[6]);
   // Same order as Today: by anchor, then Anytime, then This week.
   const g = todayGroups(
-    habits.filter((h) => h.kind === 'habit' || h.kind === 'anchor'),
+    habits.filter((h) => counts(h) || h.kind === 'anchor'),
     () => true,
   );
   const rank = new Map([...g.anchors.flatMap((a) => a.rows), ...g.anytime, ...g.week].map((r, i) => [r.habit.id, i]));
   const tracked = habits
-    .filter((h) => h.kind === 'habit' && days.some((d) => visibleOn(h, idx, ctx, d)))
+    .filter((h) => counts(h) && days.some((d) => visibleOn(h, idx, ctx, d)))
     .sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
 
   return (

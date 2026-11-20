@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useFonts, Lora_400Regular } from '@expo-google-fonts/lora';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { StoreProvider, useStore } from '../store';
@@ -11,12 +12,14 @@ import { NotificationBridge } from '../components/NotificationBridge';
 function ThemedStack() {
   const { ready } = useStore();
   const t = useTheme();
+  // Lora is only for Journal text; don't hold the app back if it fails to load.
+  const [fontsLoaded, fontError] = useFonts({ Lora_400Regular });
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(t.background).catch(() => {});
   }, [t.background]);
 
-  if (!ready) {
+  if (!ready || (!fontsLoaded && !fontError)) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
         <ActivityIndicator color={t.accent} />
@@ -30,6 +33,7 @@ function ThemedStack() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="tempted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="ready" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="timer" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
       </Stack>

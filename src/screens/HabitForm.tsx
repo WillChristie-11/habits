@@ -4,7 +4,7 @@ import type { ActivityUnit, Frequency, FrequencyType, Habit, HabitInput, HabitKi
 import { useStore } from '../store';
 import { Chip, Help, Input, Label, Segmented, Stepper, Toggle } from '../components/ui';
 import { TimeField, formatTime } from '../components/TimeField';
-import { isWeekly } from '../lib/schedule';
+import { counts, isWeekly } from '../lib/schedule';
 import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
 import { suggestPlanWhen } from '../lib/reminders';
@@ -84,9 +84,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [remindBefore, setRemindBefore] = useState(habit?.remind_before ?? 0);
   const [permDenied, setPermDenied] = useState(false);
   const [unit, setUnit] = useState<ActivityUnit | 'none'>(habit?.unit ?? (habit ? 'none' : 'mi'));
-  const [hasTarget, setHasTarget] = useState(habit?.target_min != null || habit?.target_max != null);
-  const [targetMin, setTargetMin] = useState(habit?.target_min ?? 2);
-  const [targetMax, setTargetMax] = useState(habit?.target_max ?? 3);
+  const [hasGoal, setHasGoal] = useState(habit?.target_min != null || habit?.target_max != null);
+  const [goal, setGoal] = useState(habit?.target_max ?? habit?.target_min ?? 3);
+  const [askNote, setAskNote] = useState(habit?.ask_note ?? false);
+  const [checkMin, setCheckMin] = useState(habit?.check_minutes ?? 45);
+  const [locked, setLocked] = useState(habit?.locked ?? false);
   const [more, setMore] = useState(false);
 
   async function toggleReminder(on: boolean) {
@@ -98,8 +100,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const isActivity = kind === 'activity';
   const isHabit = kind === 'habit';
   const avoid = isHabit && habitKind === 'avoid';
+  const cutBack = isHabit && habitKind === 'cut_back';
+  /** A scheduled habit (want or avoid); cut-backs are only logged. */
+  const plain = isHabit && !cutBack;
   const weekly = ftype === 'weekly_count' || ftype === 'every_n_days';
-  const scheduled = isAnchor || (isHabit && !weekly && when === 'time');
+  const scheduled = isAnchor || (plain && !weekly && when === 'time');
 
   // Never stack on something that (eventually) stacks on this habit.
   const createsLoop = (candidate: Habit) => {
@@ -118,7 +123,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   // "Stack after another habit" (More options): untimed, non-weekly habits.
   const habitTargets =
     isHabit && !weekly && when !== 'time'
-      ? habits.filter((h) => h.kind === 'habit' && h.id !== habit?.id && !isWeekly(h) && !createsLoop(h))
+      ? habits.filter((h) => counts(h) && h.id !== habit?.id && !isWeekly(h) && !createsLoop(h))
       : [];
   const validAnchor =
     isHabit &&
@@ -142,8 +147,8 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   async function save() {
     if (!canSave) return;
     let frequency: Frequency;
-    if (isActivity) {
-      frequency = { type: 'daily' }; // unused: activities have no expected days
+    if (isActivity || cutBack) {
+      frequency = { type: 'daily' }; // unused: activities and cut-backs have no expected days
     } else if (isAnchor) {
       frequency = days.length === 7 ? { type: 'daily' } : { type: 'specific_days', days: [...days].sort() };
     } else {
@@ -165,9 +170,9 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
       kind,
       name: name.trim(),
       frequency,
-      why: isHabit ? why.trim() || null : null,
-      minimum_version: isHabit ? minimum.trim() || null : null,
-      messages: isHabit ? messages : [],
+      why: plain ? why.trim() || null : null,
+      minimum_version: plain ? minimum.trim() || null : null,
+      messages: plain ? messages : [],
       habit_kind: isHabit ? habitKind : 'want',
       session_minutes: sessionMin,
       ready_minutes: readyMin,
@@ -175,13 +180,16 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
       ladder: avoid ? ladder : [],
       ladder_index: avoid ? Math.min(ladderIndex, ladder.length) : 0,
       pair_with: avoid ? pairWith.trim() || null : null,
-      plan_when: isHabit ? planWhen?.trim() || null : null,
-      plan_action: isHabit && planWhen?.trim() ? planAction.trim() || null : null,
-      obstacle: isHabit ? obstacle?.trim() || null : null,
+      plan_when: plain ? planWhen?.trim() || null : null,
+      plan_action: plain && planWhen?.trim() ? planAction.trim() || null : null,
+      obstacle: plain ? obstacle?.trim() || null : null,
       unit: isActivity && unit !== 'none' ? unit : null,
-      target_min: isActivity && hasTarget ? Math.min(targetMin, targetMax) : null,
-      target_max: isActivity && hasTarget ? Math.max(targetMin, targetMax) : null,
-      stack_after: isHabit ? validAnchor : null,
+      target_min: null,
+      target_max: isActivity && hasGoal ? goal : null,
+      ask_note: (plain || isAnchor) && askNote,
+      check_minutes: checkMin,
+      locked: cutBack && locked,
+      stack_after: plain ? validAnchor : null,
       scheduled_time: scheduled ? time : null,
       end_time: isAnchor && hasEnd ? endTime : null,
       reminder: scheduled && reminder,
@@ -245,6 +253,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const moreSet = [
     scheduled && reminder,
     readyMin !== 3,
+    (plain || isAnchor) && askNote,
     isHabit && afterHabit,
     isHabit && planWhen != null,
     isHabit && obstacle != null,
@@ -319,17 +328,15 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
             />
             <View style={{ marginTop: 12 }}>
               <Toggle
-                label="Soft weekly target"
-                note="Only shown in the Sunday recap. Never a goal you can miss."
-                value={hasTarget}
-                onChange={setHasTarget}
+                label="Weekly goal"
+                note="Only shown in the Sunday recap, as 2/4. Never a goal you can miss."
+                value={hasGoal}
+                onChange={setHasGoal}
               />
             </View>
-            {hasTarget && (
+            {hasGoal && (
               <View style={s.targetRow}>
-                <Stepper value={targetMin} min={1} max={14} onChange={setTargetMin} />
-                <Text style={s.targetTo}>to</Text>
-                <Stepper value={targetMax} min={1} max={14} onChange={setTargetMax} suffix="× a week" />
+                <Stepper value={goal} min={1} max={14} onChange={setGoal} suffix="× a week" />
               </View>
             )}
           </>
@@ -354,85 +361,110 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
 
         {isHabit && (
           <>
-            <Label>Want or avoid</Label>
+            <Label>Type</Label>
             <Segmented<HabitKind>
               value={habitKind}
               onChange={setHabitKind}
               options={[
                 { value: 'want', label: 'Want to do' },
                 { value: 'avoid', label: 'Tend to avoid' },
+                { value: 'cut_back', label: 'Cut back' },
               ]}
             />
             <View style={{ marginTop: 8 }}>
               <Help>
                 {avoid
                   ? 'For things you put off. It counts as done as soon as you start a short timed session.'
-                  : 'Counts as done when you check it off.'}
+                  : cutBack
+                    ? 'Something to do less of. Not on your list: log it from “Tempted?” when it happens. No streaks, nothing missed.'
+                    : 'Counts as done when you check it off.'}
               </Help>
             </View>
 
-            <Label>How often</Label>
-            <Segmented<FrequencyType>
-              value={ftype}
-              onChange={setFtype}
-              options={[
-                { value: 'daily', label: 'Daily' },
-                { value: 'specific_days', label: 'Days' },
-                { value: 'weekly_count', label: 'Per week' },
-                { value: 'every_n_days', label: 'Every N' },
-              ]}
-            />
-            <View style={s.detail}>
-              {ftype === 'specific_days' && dayChips}
-              {ftype === 'weekly_count' && (
-                <Stepper value={count} min={1} max={7} onChange={setCount} suffix="× / week" />
-              )}
-              {ftype === 'every_n_days' && <Stepper value={n} min={2} max={30} onChange={setN} suffix="days" />}
-              {weekly && <Help>Lives in “This week”.</Help>}
-            </View>
-
-            {!weekly && (
+            {cutBack && (
               <>
-                <Label>When</Label>
-                <View style={s.chips}>
-                  {anchors.map((a) => (
-                    <Chip
-                      key={a.id}
-                      label={a.scheduled_time ? `${a.name} · ${formatTime(a.scheduled_time)}` : a.name}
-                      active={validAnchor === a.id}
-                      onPress={() => {
-                        setWhen('after');
-                        setStackAfter(a.id);
-                      }}
-                    />
-                  ))}
-                  {afterHabit && (
-                    <Chip
-                      label={`After ${habits.find((x) => x.id === validAnchor)?.name ?? ''}`}
-                      active
-                      onPress={() => {}}
-                    />
-                  )}
-                  <Chip
-                    label="Anytime"
-                    active={when === 'anytime' || (when === 'after' && validAnchor == null)}
-                    onPress={() => setWhen('anytime')}
-                  />
-                  <Chip label="At a time" active={when === 'time'} onPress={() => setWhen('time')} />
-                </View>
+                <Label>Ask how I feel</Label>
+                <Stepper value={checkMin} min={15} max={180} step={15} onChange={setCheckMin} suffix="min later" />
                 <View style={{ marginTop: 8 }}>
-                  <Help>
-                    {when === 'time'
-                      ? 'Listed under Anytime on Today, at its time on Schedule.'
-                      : validAnchor != null
-                        ? 'Listed under it on Today, and highlighted once it’s done.'
-                        : 'Listed under Anytime on Today.'}
-                  </Help>
+                  <Help>A notification with a 1–5 scale and room for a short note.</Help>
                 </View>
-                {when === 'time' && (
-                  <View style={s.detail}>
-                    <TimeField value={time} onChange={setTime} />
-                  </View>
+                <View style={{ marginTop: 14 }}>
+                  <Toggle
+                    label="Lock with Face ID"
+                    note="Tempted? asks for Face ID, and the name is hidden in the recap and notifications."
+                    value={locked}
+                    onChange={setLocked}
+                  />
+                </View>
+              </>
+            )}
+
+            {!cutBack && (
+              <>
+                <Label>How often</Label>
+                <Segmented<FrequencyType>
+                  value={ftype}
+                  onChange={setFtype}
+                  options={[
+                    { value: 'daily', label: 'Daily' },
+                    { value: 'specific_days', label: 'Days' },
+                    { value: 'weekly_count', label: 'Per week' },
+                    { value: 'every_n_days', label: 'Every N' },
+                  ]}
+                />
+                <View style={s.detail}>
+                  {ftype === 'specific_days' && dayChips}
+                  {ftype === 'weekly_count' && (
+                    <Stepper value={count} min={1} max={7} onChange={setCount} suffix="× / week" />
+                  )}
+                  {ftype === 'every_n_days' && <Stepper value={n} min={2} max={30} onChange={setN} suffix="days" />}
+                  {weekly && <Help>Lives in “This week”.</Help>}
+                </View>
+
+                {!weekly && (
+                  <>
+                    <Label>When</Label>
+                    <View style={s.chips}>
+                      {anchors.map((a) => (
+                        <Chip
+                          key={a.id}
+                          label={a.scheduled_time ? `${a.name} · ${formatTime(a.scheduled_time)}` : a.name}
+                          active={validAnchor === a.id}
+                          onPress={() => {
+                            setWhen('after');
+                            setStackAfter(a.id);
+                          }}
+                        />
+                      ))}
+                      {afterHabit && (
+                        <Chip
+                          label={`After ${habits.find((x) => x.id === validAnchor)?.name ?? ''}`}
+                          active
+                          onPress={() => {}}
+                        />
+                      )}
+                      <Chip
+                        label="Anytime"
+                        active={when === 'anytime' || (when === 'after' && validAnchor == null)}
+                        onPress={() => setWhen('anytime')}
+                      />
+                      <Chip label="At a time" active={when === 'time'} onPress={() => setWhen('time')} />
+                    </View>
+                    <View style={{ marginTop: 8 }}>
+                      <Help>
+                        {when === 'time'
+                          ? 'Listed under Anytime on Today, at its time on Schedule.'
+                          : validAnchor != null
+                            ? 'Listed under it on Today, and highlighted once it’s done.'
+                            : 'Listed under Anytime on Today.'}
+                      </Help>
+                    </View>
+                    {when === 'time' && (
+                      <View style={s.detail}>
+                        <TimeField value={time} onChange={setTime} />
+                      </View>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -465,7 +497,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
           </>
         )}
 
-        {!isActivity && (
+        {!isActivity && !cutBack && (
           <>
             <Pressable
               onPress={() => setMore((m) => !m)}
@@ -490,6 +522,15 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
                 )}
                 {readyFields}
 
+                <View style={{ marginTop: 18 }}>
+                  <Toggle
+                    label="Ask what I did"
+                    note="After checking it off, an optional one-line prompt. Lines show in the Sunday recap."
+                    value={askNote}
+                    onChange={setAskNote}
+                  />
+                </View>
+
                 {habitTargets.length > 0 && (
                   <>
                     <Label hint="optional">Stack after another habit</Label>
@@ -510,7 +551,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
                   </>
                 )}
 
-                {isHabit && (
+                {plain && (
                   <>
                     <Label hint="optional">If-then plan</Label>
                     {planWhen == null ? (

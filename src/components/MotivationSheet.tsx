@@ -6,6 +6,7 @@ import { Button } from './ui';
 import { useThemedStyles, type Theme } from '../theme';
 import { useStore } from '../store';
 import { avoidLine, obstacleLine, pickMessage } from '../lib/reminders';
+import { feelingContrast } from '../lib/insights';
 
 interface Props {
   habit: Habit | null;
@@ -21,9 +22,11 @@ interface Props {
 export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
-  const { ctx, settings } = useStore();
+  const { ctx, settings, idx } = useStore();
   // A rotating line besides the why (which has its own block).
   const extra = habit ? pickMessage({ ...habit, why: null }, ctx.today, settings.reminders.messages) : null;
+  // "Usually Good after this · days skipped: usually Meh" once there are 10+ ratings each side.
+  const contrast = habit ? feelingContrast(habit, idx) : null;
   return (
     <Modal visible={!!habit} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={s.scrim} onPress={onClose} accessibilityLabel="Close" />
@@ -31,6 +34,7 @@ export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onC
         <View style={[s.sheet, { paddingBottom: 16 + insets.bottom }]}>
           <Text style={s.name}>{habit.name}</Text>
           <Text style={s.lead}>{habit.habit_kind === 'avoid' ? avoidLine(habit) : 'Still time to do a little.'}</Text>
+          {contrast && <Text style={s.contrast}>{contrast}</Text>}
           {habit.habit_kind !== 'avoid' && habit.ladder[habit.ladder_index] && (
             <View style={s.block}>
               <Text style={s.label}>Next step</Text>
@@ -90,6 +94,7 @@ export function MotivationSheet({ habit, onDone, onStart, onSkip, onDetails, onC
 
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
+    contrast: { fontSize: 14, color: t.accent, fontWeight: '600', marginTop: 8, lineHeight: 19 },
     scrim: { flex: 1, backgroundColor: t.shadow, opacity: 0.35 },
     sheet: {
       position: 'absolute',

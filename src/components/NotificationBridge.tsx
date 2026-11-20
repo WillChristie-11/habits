@@ -3,7 +3,13 @@ import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
 import { planNotifications } from '../lib/reminders';
-import { initNotifications, listenForResponses, requestPermission, syncNotifications, type ItemResponse } from '../lib/notifications';
+import {
+  initNotifications,
+  listenForResponses,
+  requestPermission,
+  syncNotifications,
+  type ItemResponse,
+} from '../lib/notifications';
 
 const SYNC_DEBOUNCE_MS = 400;
 
@@ -32,6 +38,17 @@ export function NotificationBridge() {
       handled.add(r.key);
       const s = storeRef.current;
       await s.updateSettings({ handledResponses: [...handled].slice(-40) });
+      // Cut-back follow-up: 1–5 and a note straight from the notification; a tap opens Tempted?.
+      if (r.type === 'follow' && r.occurrenceId != null) {
+        if (r.action === 'feel') await s.rateOccurrence(r.occurrenceId, { feeling: r.feeling });
+        else if (r.action === 'note') await s.rateOccurrence(r.occurrenceId, { note: r.text });
+        else router.push({ pathname: '/tempted', params: { occ: String(r.occurrenceId) } });
+        return;
+      }
+      if (r.type === 'wait') {
+        router.push('/tempted');
+        return;
+      }
       if (r.habitId == null || !r.date) return;
       if (!s.habits.some((h) => h.id === r.habitId)) return;
       if (r.action === 'done') await s.mark(r.habitId, 'done', r.date);

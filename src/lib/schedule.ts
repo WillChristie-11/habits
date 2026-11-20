@@ -14,6 +14,10 @@ export function indexRecords(records: DayRecord[]): RecordIndex {
   return idx;
 }
 
+/** Habits that are scheduled and counted. Cut-back habits are only logged, never expected or counted. */
+export const counts = (h: Habit) => h.kind === 'habit' && h.habit_kind !== 'cut_back';
+export const isCutBack = (h: Habit) => h.kind === 'habit' && h.habit_kind === 'cut_back';
+
 export interface Ctx {
   today: string;
   /** Whole-app pause (travel mode), inclusive range. */
@@ -61,8 +65,8 @@ export function timeline(h: Habit, idx: RecordIndex, from: string, to: string, c
       s = 'none';
     } else if (rec) {
       s = rec.status;
-    } else if (h.kind === 'activity') {
-      s = 'none'; // activities are only ever logged, never expected or missed
+    } else if (h.kind === 'activity' || isCutBack(h)) {
+      s = 'none'; // activities and cut-backs are only ever logged, never expected or missed
     } else if (isPausedOn(h, d, ctx)) {
       s = 'paused';
     } else {
@@ -114,7 +118,7 @@ export interface Progress {
  * Today counts only once it's done (so mornings don't start at 0%).
  */
 export function progress(h: Habit, idx: RecordIndex, days: string[], ctx: Ctx): Progress {
-  if (h.kind !== 'habit') return { done: 0, expected: 0, pct: null }; // anchors and activities never count
+  if (!counts(h)) return { done: 0, expected: 0, pct: null }; // anchors, activities, cut-backs never count
   const tl = timeline(h, idx, days[0], days[days.length - 1], ctx);
   let done = 0;
   let missed = 0;
@@ -162,7 +166,7 @@ export const visibleToday = (h: Habit, idx: RecordIndex, ctx: Ctx) => visibleOn(
 /** "Never miss twice": missed yesterday and not done today. */
 export function missedTwiceRisk(h: Habit, idx: RecordIndex, ctx: Ctx): boolean {
   // Avoid habits never get "missed yesterday".
-  if (h.kind !== 'habit' || h.habit_kind === 'avoid' || h.frequency.type === 'weekly_count') return false;
+  if (!counts(h) || h.habit_kind === 'avoid' || h.frequency.type === 'weekly_count') return false;
   const y = addDays(ctx.today, -1);
   const tl = timeline(h, idx, y, ctx.today, ctx);
   return tl.states.get(y) === 'missed' && tl.states.get(ctx.today) === 'pending';
@@ -174,7 +178,7 @@ export function dayCompletion(habits: Habit[], idx: RecordIndex, ctx: Ctx, date:
   let total = 0;
   for (const h of habits) {
     // Avoid habits stay out of counts (starting one still checks it off on its row).
-    if (h.kind !== 'habit' || h.habit_kind === 'avoid' || h.frequency.type === 'weekly_count') continue;
+    if (!counts(h) || h.habit_kind === 'avoid' || h.frequency.type === 'weekly_count') continue;
     const s = stateOn(h, idx, date, ctx);
     if (s === 'done') {
       done++;
@@ -240,7 +244,7 @@ export function rootAnchor(h: Habit, habits: Habit[]): Habit | null {
 
 /** Morning = under an anchor before noon (or timed before noon). Drives the morning reminder. */
 export function isMorning(h: Habit, habits: Habit[]): boolean {
-  if (h.kind !== 'habit' || isWeekly(h)) return false;
+  if (!counts(h) || isWeekly(h)) return false;
   const t = h.scheduled_time ?? rootAnchor(h, habits)?.scheduled_time ?? null;
   return t != null && toMinutes(t) < 12 * 60;
 }
@@ -392,7 +396,7 @@ export function periodSummary(habits: Habit[], idx: RecordIndex, days: string[],
   let expected = 0;
   const last = days[days.length - 1];
   for (const h of habits) {
-    if (h.kind !== 'habit' || h.habit_kind === 'avoid' || habitStart(h, idx.get(h.id)) > last) continue;
+    if (!counts(h) || h.habit_kind === 'avoid' || habitStart(h, idx.get(h.id)) > last) continue;
     const p = progress(h, idx, days, ctx);
     if (p.target != null) {
       done += Math.min(p.done, p.target);

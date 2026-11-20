@@ -103,17 +103,40 @@ export function Chip({ label, active, onPress }: { label: string; active: boolea
   );
 }
 
-export function Toggle({ label, value, onChange, note }: { label: string; value: boolean; onChange(v: boolean): void; note?: string }) {
+export function Toggle({
+  label,
+  value,
+  onChange,
+  note,
+}: {
+  label: string;
+  value: boolean;
+  onChange(v: boolean): void;
+  note?: string;
+}) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
   return (
-    <View style={s.toggleRow}>
+    // The whole row toggles, not just the switch.
+    <Pressable
+      style={s.toggleRow}
+      onPress={() => onChange(!value)}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+    >
       <View style={{ flex: 1 }}>
         <Text style={s.toggleLabel}>{label}</Text>
         {note && <Text style={s.help}>{note}</Text>}
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: t.accent, false: t.muted }} />
-    </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: t.accent, false: t.muted }}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      />
+    </Pressable>
   );
 }
 

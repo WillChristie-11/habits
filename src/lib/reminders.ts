@@ -5,6 +5,7 @@ import {
   missedTwiceRisk,
   onTimeline,
   isMorning,
+  counts,
   isWeekly,
   progress,
   stateOn,
@@ -21,7 +22,7 @@ export const SNOOZE_MIN = 30;
 export const MAX_SCHEDULED = 60;
 export const MORNING_ENDS = '12:00';
 
-const tracked = (h: Habit) => h.kind === 'habit';
+const tracked = counts;
 export const isAvoid = (h: Habit) => h.kind === 'habit' && h.habit_kind === 'avoid';
 const wanted = (h: Habit) => tracked(h) && !isAvoid(h);
 
@@ -231,7 +232,7 @@ export function checkinCandidates(habits: Habit[], idx: RecordIndex, ctx: Ctx, d
   const c: Ctx = { ...ctx, today: date };
   const pace = new Set(behindPace(habits, idx, c).map((w) => w.habit.id));
   const open = habits.filter((h) => {
-    if (h.kind !== 'habit' || !visibleOn(h, idx, c, date)) return false;
+    if (!counts(h) || !visibleOn(h, idx, c, date)) return false;
     const s = stateOn(h, idx, date, c);
     if (s === 'done' || s === 'skipped' || s === 'paused') return false;
     return s === 'pending' || pace.has(h.id); // weekly_count habits only when behind

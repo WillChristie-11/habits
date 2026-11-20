@@ -27,7 +27,7 @@ export function TimerScreen() {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   const params = useLocalSearchParams<{ habitId: string; date?: string }>();
-  const { habits, ctx, startSession, finishSession, advanceLadder } = useStore();
+  const { habits, ctx, startSession, finishSession, advanceLadder, setAfterPrompt } = useStore();
   const habit = habits.find((h) => h.id === Number(params.habitId));
   const date = params.date ?? ctx.today;
 
@@ -87,6 +87,10 @@ export function TimerScreen() {
 
   const finish = async () => {
     await finishSession(habit, date);
+    // A finished session gets the same card as a check-off (want: feeling; ask_note: one line).
+    const wantFeeling = habit.habit_kind === 'want';
+    if (wantFeeling || habit.ask_note)
+      setAfterPrompt({ habitId: habit.id, date, feelings: wantFeeling, note: habit.ask_note, reason: 'done' });
     if (!step) return close();
     Alert.alert(
       'Advance to next step?',
@@ -114,7 +118,9 @@ export function TimerScreen() {
         <Pressable onPress={close} hitSlop={12} accessibilityLabel="Close timer">
           <Text style={s.close}>✕</Text>
         </Pressable>
-        <Text style={s.kicker}>{habit.habit_kind === 'avoid' ? 'Started · it counts' : `${habit.session_minutes} min session`}</Text>
+        <Text style={s.kicker}>
+          {habit.habit_kind === 'avoid' ? 'Started · it counts' : `${habit.session_minutes} min session`}
+        </Text>
         <View style={{ width: 24 }} />
       </View>
 

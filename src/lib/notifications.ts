@@ -12,6 +12,13 @@ export const ACTION_READY = 'ready';
 /** Opens the app on the "Get ready" countdown. */
 const READY_BUTTON = { identifier: ACTION_READY, buttonTitle: 'Get ready', options: { opensAppToForeground: true } };
 const TIMER_PREFIX = 'timer-';
+/** Scheduled outside the planner (cut-back follow-ups, Wait 10 min); re-planning leaves them alone. */
+const FOLLOW_PREFIX = 'follow-';
+const WAIT_PREFIX = 'wait-';
+const KEEP = [TIMER_PREFIX, FOLLOW_PREFIX, WAIT_PREFIX];
+export const FEEL_CATEGORY = 'cutback-feel';
+export const ACTION_NOTE = 'note';
+const FEEL_ACTION = /^feel-([1-5])$/;
 
 /** 'item' → Done / Later / Skip. 'start-15' → Start 15 min / Later / Skip (avoid habits). */
 const categoryId = (c: string) => (c === 'item' ? ITEM_CATEGORY : `habit-${c}`);
@@ -49,6 +56,47 @@ export async function scheduleTimerEnd(habitId: number | string, at: Date, title
   });
 }
 
+/** "How do you feel now?" N minutes after a cut-back log, with 1–5 buttons and a note field. */
+export async function scheduleFollowUp(occurrenceId: number, at: Date, title: string) {
+  if (!supported || (await getPermission()) !== 'granted') return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: `${FOLLOW_PREFIX}${occurrenceId}`,
+    content: {
+      title,
+      body: 'Long-press to answer 1–5, or add a short note.',
+      sound: true,
+      categoryIdentifier: FEEL_CATEGORY,
+      data: { type: 'follow', occurrenceId },
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+  });
+}
+
+export async function cancelFollowUp(occurrenceId: number) {
+  if (!supported) return;
+  await Notifications.cancelScheduledNotificationAsync(`${FOLLOW_PREFIX}${occurrenceId}`).catch(() => {});
+}
+
+/** The end of a "Wait 10 min", in case the app is closed by then. */
+export async function scheduleWaitEnd(habitId: number, at: Date) {
+  if (!supported || (await getPermission()) !== 'granted') return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: `${WAIT_PREFIX}${habitId}`,
+    content: {
+      title: '10 minutes are up',
+      body: 'Check in with yourself: still want it?',
+      sound: true,
+      data: { type: 'wait', habitId },
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+  });
+}
+
+export async function cancelWaitEnd(habitId: number) {
+  if (!supported) return;
+  await Notifications.cancelScheduledNotificationAsync(`${WAIT_PREFIX}${habitId}`).catch(() => {});
+}
+
 export async function cancelTimerEnd(habitId: number | string) {
   if (!supported) return;
   await Notifications.cancelScheduledNotificationAsync(`${TIMER_PREFIX}${habitId}`).catch(() => {});
@@ -67,7 +115,7 @@ export async function initNotifications() {
     // summaries don't, because the in-app banners already say the same thing.
     handleNotification: async (n) => {
       const type = (n.request.content.data as { type?: string } | undefined)?.type;
-      const show = type === 'item' || type === 'timer';
+      const show = type === 'item' || type === 'timer' || type === 'follow' || type === 'wait';
       return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
     },
   });
@@ -77,6 +125,19 @@ export async function initNotifications() {
       READY_BUTTON,
       { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
       { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
+    ]);
+    await Notifications.setNotificationCategoryAsync(FEEL_CATEGORY, [
+      ...['Drained', 'Meh', 'Okay', 'Good', 'Great'].map((label, i) => ({
+        identifier: `feel-${i + 1}`,
+        buttonTitle: `${i + 1} · ${label}`,
+        options: { opensAppToForeground: false },
+      })),
+      {
+        identifier: ACTION_NOTE,
+        buttonTitle: 'Add a note',
+        textInput: { submitButtonTitle: 'Save', placeholder: 'A few words' },
+        options: { opensAppToForeground: false },
+      },
     ]);
   } catch (e) {
     console.warn('Could not register notification actions', e);
@@ -109,62 +170,81 @@ let chain: Promise<void> = Promise.resolve();
 /** Replace everything pending with `plan`. */
 export function syncNotifications(plan: PlannedNotification[]): Promise<void> {
   if (!supported) return Promise.resolve();
-  chain = chain.then(async () => {
-    if ((await getPermission()) !== 'granted') return;
-    // Replace everything we plan; leave a running session timer's alert alone.
-    const pending = await Notifications.getAllScheduledNotificationsAsync();
-    for (const n of pending) {
-      if (!n.identifier.startsWith(TIMER_PREFIX)) await Notifications.cancelScheduledNotificationAsync(n.identifier);
-    }
-    await ensureStartCategories(plan);
-    for (const p of plan) {
-      await Notifications.scheduleNotificationAsync({
-        identifier: p.id,
-        content: {
-          title: p.title,
-          body: p.body,
-          data: p.data,
-          sound: true,
-          ...(p.category ? { categoryIdentifier: categoryId(p.category) } : {}),
-        },
-        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: p.at },
-      });
-    }
-  }).catch((e) => console.warn('Notification sync failed', e));
+  chain = chain
+    .then(async () => {
+      if ((await getPermission()) !== 'granted') return;
+      // Replace everything we plan; leave a running session timer's alert alone.
+      const pending = await Notifications.getAllScheduledNotificationsAsync();
+      for (const n of pending) {
+        if (!KEEP.some((k) => n.identifier.startsWith(k)))
+          await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      }
+      await ensureStartCategories(plan);
+      for (const p of plan) {
+        await Notifications.scheduleNotificationAsync({
+          identifier: p.id,
+          content: {
+            title: p.title,
+            body: p.body,
+            data: p.data,
+            sound: true,
+            ...(p.category ? { categoryIdentifier: categoryId(p.category) } : {}),
+          },
+          trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: p.at },
+        });
+      }
+    })
+    .catch((e) => console.warn('Notification sync failed', e));
   return chain;
 }
 
 export interface ItemResponse {
   /** unique per tap, for de-duplication */
   key: string;
-  action: 'done' | 'later' | 'skip' | 'start' | 'ready' | 'open';
+  action: 'done' | 'later' | 'skip' | 'start' | 'ready' | 'feel' | 'note' | 'open';
   habitId: number | null;
   date: string | null;
-  /** what the notification was: item / morning / evening / timer */
+  /** what the notification was: item / morning / evening / timer / follow / wait */
   type: string | null;
+  /** cut-back follow-ups */
+  occurrenceId: number | null;
+  feeling: number | null;
+  text: string | null;
 }
 
 export function parseResponse(r: Notifications.NotificationResponse): ItemResponse {
-  const data = (r.notification.request.content.data ?? {}) as { habitId?: number; date?: string; type?: string };
+  const data = (r.notification.request.content.data ?? {}) as {
+    habitId?: number;
+    date?: string;
+    type?: string;
+    occurrenceId?: number;
+  };
   const a = r.actionIdentifier;
-  const action =
-    a === ACTION_DONE
-      ? 'done'
-      : a === ACTION_LATER
-        ? 'later'
-        : a === ACTION_SKIP
-          ? 'skip'
-          : a === ACTION_START
-            ? 'start'
-            : a === ACTION_READY
-              ? 'ready'
-              : 'open';
+  const feel = a.match(FEEL_ACTION);
+  const action: ItemResponse['action'] = feel
+    ? 'feel'
+    : a === ACTION_NOTE
+      ? 'note'
+      : a === ACTION_DONE
+        ? 'done'
+        : a === ACTION_LATER
+          ? 'later'
+          : a === ACTION_SKIP
+            ? 'skip'
+            : a === ACTION_START
+              ? 'start'
+              : a === ACTION_READY
+                ? 'ready'
+                : 'open';
   return {
     key: `${r.notification.request.identifier}|${r.notification.date}|${a}`,
     action,
     habitId: typeof data.habitId === 'number' ? data.habitId : null,
     date: typeof data.date === 'string' ? data.date : null,
     type: typeof data.type === 'string' ? data.type : null,
+    occurrenceId: typeof data.occurrenceId === 'number' ? data.occurrenceId : null,
+    feeling: feel ? Number(feel[1]) : null,
+    text: typeof r.userText === 'string' && r.userText.trim() ? r.userText.trim() : null,
   };
 }
 

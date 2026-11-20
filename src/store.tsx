@@ -4,7 +4,7 @@ import { AppearanceContext, DEFAULT_APPEARANCE, type Appearance } from './theme'
 import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { todayKey } from './lib/dates';
-import type { DayRecord, Habit, HabitInput, RecordStatus, ReminderSettings } from './types';
+import type { DayRecord, Habit, HabitInput, Meta, Occurrence, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
 
@@ -23,8 +23,32 @@ const DEFAULT_SETTINGS: Settings = {
   handledResponses: [],
 };
 
+/**
+ * The card after a check-off, a finished session or a skip: a 1–5 feeling (habits) and/or a
+ * one-line "what did you do?" (items with ask_note). Lives in the store so the timer screen can
+ * raise it on the screen underneath.
+ */
+export interface AfterPrompt {
+  habitId: number;
+  date: string;
+  feelings: boolean;
+  note: boolean;
+  /** 'skip' asks how the day feels rather than how the habit felt */
+  reason: 'done' | 'skip';
+}
+
 interface Store {
   ready: boolean;
+  /** Cut-back logs, oldest first. */
+  occurrences: Occurrence[];
+  /** Log a cut-back occurrence now; returns its id. */
+  logOccurrence(h: Habit): Promise<number>;
+  rateOccurrence(id: number, patch: { feeling?: number | null; note?: string | null }): Promise<void>;
+  removeOccurrence(id: number): Promise<void>;
+  afterPrompt: AfterPrompt | null;
+  setAfterPrompt(p: AfterPrompt | null): void;
+  /** Save a "what did you do?" line on a day's record. */
+  setNote(habitId: number, date: string, text: string): Promise<void>;
   habits: Habit[];
   records: DayRecord[];
   /** Journal pages by date. */
@@ -44,7 +68,7 @@ interface Store {
   editHabit(id: number, input: HabitInput): Promise<void>;
   removeHabit(id: number): Promise<void>;
   reorder(ids: number[]): Promise<void>;
-  mark(habitId: number, status: RecordStatus, date?: string): Promise<void>;
+  mark(habitId: number, status: RecordStatus, date?: string, meta?: Meta | null): Promise<void>;
   unmark(habitId: number, date?: string): Promise<void>;
   rateFeeling(habitId: number, feeling: number | null, date?: string): Promise<void>;
   updateSettings(patch: Partial<Settings>): Promise<void>;
@@ -80,12 +104,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [records, setRecords] = useState<DayRecord[]>([]);
   const [pages, setPages] = useState<Record<string, string>>({});
   const [weeks, setWeeks] = useState<Record<string, string>>({});
+  const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w] = await Promise.all([db.loadHabits(), db.loadRecords(), db.loadPages(), db.loadWeeks()]);
+    const [h, r, p, w, o] = await Promise.all([
+      db.loadHabits(),
+      db.loadRecords(),
+      db.loadPages(),
+      db.loadWeeks(),
+      db.loadOccurrences(),
+    ]);
     setHabits(h);
+    setOccurrences(o);
     setRecords(r);
     setWeeks(w);
     setPages(Object.fromEntries(p.map((x) => [x.date, x.text])));
@@ -132,6 +165,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const store = useMemo<Store>(
     () => ({
       ready,
+      occurrences,
+      afterPrompt,
+      setAfterPrompt,
+      async logOccurrence(h) {
+        const id = await db.addOccurrence(h.id, new Date().toISOString());
+        await reload();
+        return id;
+      },
+      async rateOccurrence(id, patch) {
+        setOccurrences((list) => list.map((o) => (o.id === id ? { ...o, ...patch } : o)));
+        await db.updateOccurrence(id, patch);
+      },
+      async removeOccurrence(id) {
+        await db.deleteOccurrence(id);
+        await reload();
+      },
+      async setNote(habitId, date, text) {
+        const existing = records.find((r) => r.habit_id === habitId && r.date === date);
+        if (!existing) return;
+        const meta = { ...(existing.meta ?? {}) };
+        if (text.trim()) meta.note = text.trim();
+        else delete meta.note;
+        await db.setRecordMeta(habitId, date, meta);
+        await reload();
+      },
       habits,
       records,
       pages,
@@ -158,8 +216,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await db.reorderHabits(ids);
         await reload();
       },
-      async mark(habitId, status, date = today) {
-        await db.setRecord(habitId, date, status);
+      async mark(habitId, status, date = today, meta = null) {
+        await db.setRecord(habitId, date, status, null, meta);
         await reload();
       },
       async unmark(habitId, date = today) {
@@ -249,7 +307,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await db.saveSetting('reminders', JSON.stringify(next));
       },
     }),
-    [ready, habits, records, pages, weeks, idx, ctx, settings, now, today, reload, loadSettingsFromDb],
+    [
+      ready,
+      habits,
+      records,
+      pages,
+      weeks,
+      occurrences,
+      afterPrompt,
+      idx,
+      ctx,
+      settings,
+      now,
+      today,
+      reload,
+      loadSettingsFromDb,
+    ],
   );
 
   return (

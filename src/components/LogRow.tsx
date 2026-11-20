@@ -4,13 +4,16 @@ import {
   Alert,
   Animated,
   Easing,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { Habit } from '../types';
 import { FEELINGS } from '../types';
@@ -22,25 +25,43 @@ const AUTO_DISMISS_MS = 7000;
 const unitLabel = (u: Habit['unit']) => (u === 'mi' ? 'mi' : u === 'min' ? 'min' : '');
 
 /**
- * "Log" row at the bottom of Today: one button per activity. One tap logs it for today (light
- * haptic) and offers an optional amount + feeling sheet. Long-press to log one of the last 7 days,
- * or to edit/delete the activity.
+ * "＋ Log" at the bottom of Today: opens a list of activities (+ "New…"). One tap logs it for today
+ * with a light haptic, then offers an optional amount + feeling sheet. Long-press an activity to log
+ * an earlier day, or to edit or delete it. Today's logs show as chips beside the button.
  * Activities are never expected, missed or counted.
  */
-export function LogRow({ onEdit, onDelete }: { onEdit(h: Habit): void; onDelete(h: Habit): void }) {
+export function LogRow({
+  onEdit,
+  onDelete,
+  onNew,
+  trailing,
+}: {
+  onEdit(h: Habit): void;
+  onDelete(h: Habit): void;
+  onNew(): void;
+  /** Shown at the right end of the row (the "Tempted?" button). */
+  trailing?: React.ReactNode;
+}) {
   const s = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
   const { habits, idx, ctx, logActivity } = useStore();
   const activities = habits.filter((h) => h.kind === 'activity').sort((a, b) => a.order - b.order || a.id - b.id);
+  const [open, setOpen] = useState(false);
   const [sheet, setSheet] = useState<{ habit: Habit; date: string } | null>(null);
-  if (!activities.length) return null;
 
+  const logged = (h: Habit) => idx.get(h.id)?.get(ctx.today)?.status === 'done';
   const log = async (h: Habit, date: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     await logActivity(h, date);
     setSheet({ habit: h, date });
   };
+  const pick = (h: Habit) => {
+    setOpen(false);
+    if (logged(h)) setSheet({ habit: h, date: ctx.today });
+    else log(h, ctx.today);
+  };
 
-  const pickDay = (h: Habit) => {
+  const more = (h: Habit) => {
     const days = Array.from({ length: 7 }, (_, i) => addDays(ctx.today, -i));
     const label = (d: string, i: number) =>
       i === 0
@@ -48,55 +69,98 @@ export function LogRow({ onEdit, onDelete }: { onEdit(h: Habit): void; onDelete(
         : i === 1
           ? 'Yesterday'
           : fromKey(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      const options = [...days.map(label), 'Edit activity', 'Delete activity', 'Cancel'];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `Log ${h.name} for…`,
-          options,
-          destructiveButtonIndex: days.length + 1,
-          cancelButtonIndex: options.length - 1,
-        },
-        (i) => {
-          if (i < days.length) log(h, days[i]);
-          else if (i === days.length) onEdit(h);
-          else if (i === days.length + 1)
-            Alert.alert(`Delete ${h.name}?`, 'Its logged days are deleted too.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: () => onDelete(h) },
-            ]);
-        },
-      );
-    } else log(h, ctx.today);
+    const confirmDelete = () =>
+      Alert.alert(`Delete ${h.name}?`, 'Its history will be removed.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => onDelete(h) },
+      ]);
+    if (Platform.OS !== 'ios') return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    const options = [...days.map(label), 'Edit activity', 'Delete activity', 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: `Log ${h.name} for…`,
+        options,
+        destructiveButtonIndex: days.length + 1,
+        cancelButtonIndex: options.length - 1,
+      },
+      (i) => {
+        if (i === options.length - 1) return;
+        setOpen(false);
+        if (i < days.length) log(h, days[i]);
+        else if (i === days.length) setTimeout(() => onEdit(h), 300);
+        else confirmDelete();
+      },
+    );
   };
+
+  const todays = activities.filter(logged);
 
   return (
     <View style={s.wrap}>
-      <Text style={s.title}>Log</Text>
       <View style={s.buttons}>
-        {activities.map((h) => {
-          const rec = idx.get(h.id)?.get(ctx.today);
-          const logged = rec?.status === 'done';
-          const amount = Number(rec?.meta?.amount) || 0;
+        <Pressable
+          onPress={() => (activities.length ? setOpen(true) : onNew())}
+          style={({ pressed }) => [s.btn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Log an activity"
+        >
+          <Text style={s.btnText}>＋ Log</Text>
+        </Pressable>
+        {todays.map((h) => {
+          const amount = Number(idx.get(h.id)?.get(ctx.today)?.meta?.amount) || 0;
           return (
             <Pressable
               key={h.id}
-              onPress={() => (logged ? setSheet({ habit: h, date: ctx.today }) : log(h, ctx.today))}
-              onLongPress={() => pickDay(h)}
-              delayLongPress={350}
-              style={({ pressed }) => [s.btn, logged && s.btnLogged, pressed && { opacity: 0.7 }]}
+              onPress={() => setSheet({ habit: h, date: ctx.today })}
+              style={({ pressed }) => [s.btn, s.btnLogged, pressed && { opacity: 0.7 }]}
               accessibilityRole="button"
-              accessibilityLabel={logged ? `${h.name}, logged today` : `Log ${h.name}`}
-              accessibilityHint="Long-press to log an earlier day"
+              accessibilityLabel={`${h.name}, logged today`}
             >
-              <Text style={[s.btnText, logged && s.btnTextLogged]}>
-                {logged ? `✓ ${h.name}${amount ? ` · ${amount} ${unitLabel(h.unit)}` : ''}` : `＋ ${h.name}`}
+              <Text style={[s.btnText, s.btnTextLogged]}>
+                ✓ {h.name}
+                {amount ? ` · ${amount} ${unitLabel(h.unit)}` : ''}
               </Text>
             </Pressable>
           );
         })}
+        {trailing && <View style={{ marginLeft: 'auto' }}>{trailing}</View>}
       </View>
+
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <Pressable style={s.scrim} onPress={() => setOpen(false)} accessibilityLabel="Close" />
+        <View style={[s.list, { paddingBottom: insets.bottom + 12 }]}>
+          <Text style={s.listTitle}>Log</Text>
+          <ScrollView style={{ maxHeight: 360 }}>
+            {activities.map((h) => (
+              <Pressable
+                key={h.id}
+                onPress={() => pick(h)}
+                onLongPress={() => more(h)}
+                delayLongPress={350}
+                style={({ pressed }) => [s.item, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityHint="Long-press to log an earlier day, edit or delete"
+              >
+                <Text style={s.itemText}>{h.name}</Text>
+                <Text style={s.itemMeta}>{logged(h) ? '✓ today' : ''}</Text>
+              </Pressable>
+            ))}
+            <Pressable
+              onPress={() => {
+                setOpen(false);
+                setTimeout(onNew, 300);
+              }}
+              style={({ pressed }) => [s.item, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+            >
+              <Text style={[s.itemText, s.newText]}>New…</Text>
+            </Pressable>
+          </ScrollView>
+          <Text style={s.listHint}>Tap to log today · long-press for an earlier day, edit or delete</Text>
+        </View>
+      </Modal>
+
       {sheet && (
         <LogSheet
           key={`${sheet.habit.id}-${sheet.date}`}
@@ -213,15 +277,29 @@ function LogSheet({ habit, date, onClose }: { habit: Habit; date: string; onClos
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     wrap: { marginTop: 26 },
-    title: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: t.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
-      marginBottom: 8,
-      marginLeft: 4,
+    scrim: { flex: 1, backgroundColor: t.scrim },
+    list: {
+      backgroundColor: t.background,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingTop: 16,
+      paddingHorizontal: 16,
     },
+    listTitle: { fontSize: 20, fontWeight: '700', color: t.text, marginBottom: 8, marginLeft: 4 },
+    item: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      backgroundColor: t.surface,
+      borderRadius: 12,
+      marginBottom: 6,
+    },
+    itemText: { fontSize: 17, fontWeight: '600', color: t.text },
+    itemMeta: { fontSize: 13, color: t.accent, fontWeight: '600' },
+    newText: { color: t.accent },
+    listHint: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginTop: 8 },
     buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     btn: { borderRadius: 20, borderWidth: 1.5, borderColor: t.accent, paddingHorizontal: 14, paddingVertical: 8 },
     btnLogged: { backgroundColor: t.accent },

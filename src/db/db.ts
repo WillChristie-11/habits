@@ -1,5 +1,15 @@
 import * as SQLite from 'expo-sqlite';
-import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, JournalPage, Meta, RecordStatus } from '../types';
+import type {
+  DayRecord,
+  Frequency,
+  Habit,
+  HabitInput,
+  ItemKind,
+  JournalPage,
+  Meta,
+  Occurrence,
+  RecordStatus,
+} from '../types';
 import { entryToLines } from '../lib/journal';
 import { defaultAnchors } from '../lib/defaults';
 import { BACKUP_APP, type Backup } from '../lib/backupFormat';
@@ -11,7 +21,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -172,6 +182,23 @@ async function open() {
          AND json_extract(frequency, '$.type') IN ('daily', 'specific_days')`,
     );
   }
+  if (version < 11) {
+    // v11: "ask what I did", cut-back habits (follow-up minutes, Face ID lock) and their logs.
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(`
+        ALTER TABLE habits ADD COLUMN ask_note INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE habits ADD COLUMN check_minutes INTEGER NOT NULL DEFAULT 45;
+        ALTER TABLE habits ADD COLUMN locked INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE IF NOT EXISTS occurrences (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          habit_id INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+          at TEXT NOT NULL,
+          feeling INTEGER CHECK (feeling BETWEEN 1 AND 5),
+          note TEXT
+        );
+      `);
+    });
+  }
   if (version === 0) {
     // Brand-new install: start with a few editable anchors.
     const now = new Date().toISOString();
@@ -206,6 +233,9 @@ interface HabitRow {
   habit_kind: string;
   session_minutes: number;
   ready_minutes: number;
+  ask_note: number;
+  check_minutes: number;
+  locked: number;
   unit: string | null;
   target_min: number | null;
   target_max: number | null;
@@ -263,9 +293,12 @@ function rowToHabit(r: HabitRow): Habit {
     why: r.why,
     minimum_version: r.minimum_version,
     messages: parseMessages(r.messages),
-    habit_kind: r.habit_kind === 'avoid' ? 'avoid' : 'want',
+    habit_kind: r.habit_kind === 'avoid' || r.habit_kind === 'cut_back' ? r.habit_kind : 'want',
     session_minutes: r.session_minutes || 15,
     ready_minutes: r.ready_minutes || 3,
+    ask_note: !!r.ask_note,
+    check_minutes: r.check_minutes || 45,
+    locked: !!r.locked,
     ladder: parseMessages(r.ladder),
     ladder_index: r.ladder_index ?? 0,
     pair_with: r.pair_with,
@@ -307,8 +340,8 @@ export async function createHabit(input: HabitInput): Promise<number> {
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
        scheduled_time, end_time, reminder, remind_before, meta, messages,
        habit_kind, session_minutes, ladder, ladder_index, pair_with, plan_when, plan_action, obstacle, ready_minutes,
-       unit, target_min, target_max, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       unit, target_min, target_max, ask_note, check_minutes, locked, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
     legacySection(input),
@@ -335,6 +368,9 @@ export async function createHabit(input: HabitInput): Promise<number> {
     input.unit,
     input.target_min,
     input.target_max,
+    input.ask_note ? 1 : 0,
+    input.check_minutes,
+    input.locked ? 1 : 0,
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -367,6 +403,9 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.unit,
     input.target_min,
     input.target_max,
+    input.ask_note ? 1 : 0,
+    input.check_minutes,
+    input.locked ? 1 : 0,
   ];
   params.push(id);
   await db.runAsync(
@@ -374,7 +413,7 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
        scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?,
        habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?,
        plan_when = ?, plan_action = ?, obstacle = ?, ready_minutes = ?,
-       unit = ?, target_min = ?, target_max = ?
+       unit = ?, target_min = ?, target_max = ?, ask_note = ?, check_minutes = ?, locked = ?
      WHERE id = ?`,
     ...params,
   );
@@ -567,4 +606,32 @@ export async function setRecordMeta(habitId: number, date: string, meta: Meta | 
     habitId,
     date,
   );
+}
+
+// --- Cut-back logs --------------------------------------------------------------------------
+
+export async function loadOccurrences(): Promise<Occurrence[]> {
+  const db = await getDb();
+  return db.getAllAsync<Occurrence>('SELECT id, habit_id, at, feeling, note FROM occurrences ORDER BY at');
+}
+
+export async function addOccurrence(habitId: number, at: string): Promise<number> {
+  const db = await getDb();
+  const res = await db.runAsync('INSERT INTO occurrences (habit_id, at) VALUES (?, ?)', habitId, at);
+  return res.lastInsertRowId;
+}
+
+export async function updateOccurrence(
+  id: number,
+  patch: { feeling?: number | null; note?: string | null },
+): Promise<void> {
+  const db = await getDb();
+  if (patch.feeling !== undefined)
+    await db.runAsync('UPDATE occurrences SET feeling = ? WHERE id = ?', patch.feeling, id);
+  if (patch.note !== undefined) await db.runAsync('UPDATE occurrences SET note = ? WHERE id = ?', patch.note, id);
+}
+
+export async function deleteOccurrence(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM occurrences WHERE id = ?', id);
 }

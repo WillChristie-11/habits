@@ -11,7 +11,8 @@ export type ItemKind = 'habit' | 'anchor' | 'activity';
 export type ActivityUnit = 'mi' | 'min';
 
 /** want = something you want to do (done when finished); avoid = something you put off (done once started). */
-export type HabitKind = 'want' | 'avoid';
+/** want = do it; avoid = put off, a session counts; cut_back = do less, only logged when it happens. */
+export type HabitKind = 'want' | 'avoid' | 'cut_back';
 
 export type FrequencyType = 'daily' | 'weekly_count' | 'specific_days' | 'every_n_days';
 
@@ -52,9 +53,15 @@ export interface Habit {
   ladder_index: number;
   /** Something pleasant to pair the session with, e.g. "good coffee". */
   pair_with: string | null;
+  /** Habits and anchors: after check-off, offer a one-line "what did you do?" prompt. */
+  ask_note: boolean;
+  /** Cut-back: minutes after a log to ask "How do you feel now?" (default 45). */
+  check_minutes: number;
+  /** Cut-back: the Tempted? screen needs Face ID; the name is hidden elsewhere. */
+  locked: boolean;
   /** Activities: what an amount is measured in (null = count only). */
   unit: ActivityUnit | null;
-  /** Activities: optional soft weekly target range, shown only in the Sunday recap. */
+  /** Activities: optional weekly goal = target_max (target_min is legacy), shown only in the Sunday recap. */
   target_min: number | null;
   target_max: number | null;
   /** Implementation intention: "When <plan_when>, I will <plan_action>." */
@@ -89,6 +96,15 @@ export interface DayRecord {
   feeling: number | null; // 1–5, habits only
   timestamp: string; // ISO
   meta: Meta | null;
+}
+
+/** One cut-back log ("it happened"), with the follow-up feeling and note if given. */
+export interface Occurrence {
+  id: number;
+  habit_id: number;
+  at: string; // ISO
+  feeling: number | null;
+  note: string | null;
 }
 
 /** Computed state of an item on one day, used for dots and progress. */

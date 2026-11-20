@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { ActionSheetIOS, Alert, Platform } from 'react-native';
+import { ActionSheetIOS, Alert, Platform, Text } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
+import { feelingContrast, wakeAnchor } from '../lib/insights';
 import type { SwipeAction } from './SwipeRow';
 import { behindPace, sectionPassed } from '../lib/reminders';
 import { FeelingPicker } from './FeelingPicker';
@@ -17,13 +18,15 @@ import { HabitDetail } from '../screens/HabitDetail';
  * check-off + feeling card, skip, details, motivation sheet, add/edit form, delete.
  * Returns the handlers plus the sheets to render once at the bottom of the screen.
  */
+const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
 export function useHabitActions(date?: string) {
-  const { habits, idx, ctx, settings, mark, unmark, rateFeeling, removeHabit } = useStore();
+  const { habits, idx, ctx, settings, mark, unmark, rateFeeling, removeHabit, afterPrompt, setAfterPrompt, setNote } =
+    useStore();
   const day = date ?? ctx.today;
   const isToday = day === ctx.today;
   const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind } | null>(null);
   const [detail, setDetail] = useState<Habit | null>(null);
-  const [feeling, setFeeling] = useState<{ habit: Habit; date: string } | null>(null);
   const [motivation, setMotivation] = useState<Habit | null>(null);
 
   /** Open the full-screen session timer (starting it is what counts for avoid habits). */
@@ -44,17 +47,31 @@ export function useHabitActions(date?: string) {
       }
       if (state === 'done' || state === 'skipped') {
         Haptics.selectionAsync().catch(() => {});
-        setFeeling((f) => (f?.habit.id === h.id ? null : f));
+        if (afterPrompt?.habitId === h.id) setAfterPrompt(null);
         await unmark(h.id, day);
       } else {
         // Anchors get a success haptic from their own completion animation.
         if (h.kind === 'habit') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        await mark(h.id, 'done', day);
-        // Anchors are just dismissed: no feeling score.
-        if (h.kind === 'habit') setFeeling({ habit: h, date: day });
+        // Sleep log: tapping Wake up today records the actual time.
+        const wake = isToday && wakeAnchor(habits)?.id === h.id;
+        await mark(h.id, 'done', day, wake ? { wokeAt: hhmm(new Date()) } : null);
+        // Habits get the feeling card; anchors only when they ask what you did.
+        if (h.kind === 'habit' || h.ask_note)
+          setAfterPrompt({ habitId: h.id, date: day, feelings: h.kind === 'habit', note: h.ask_note, reason: 'done' });
       }
     },
-    [mark, unmark, day, isToday, startTimer],
+    [mark, unmark, day, isToday, startTimer, habits, afterPrompt, setAfterPrompt],
+  );
+
+  /** Skip (rest day). Want habits then get a quick "how do you feel today?" for the feeling contrast. */
+  const skip = useCallback(
+    async (h: Habit) => {
+      Haptics.selectionAsync().catch(() => {});
+      await mark(h.id, 'skipped', day);
+      if (h.kind === 'habit' && h.habit_kind === 'want')
+        setAfterPrompt({ habitId: h.id, date: day, feelings: true, note: false, reason: 'skip' });
+    },
+    [mark, day, setAfterPrompt],
   );
 
   const openForm = useCallback((habit: Habit | null, kind: ItemKind = 'habit') => setForm({ habit, kind }), []);
@@ -92,7 +109,12 @@ export function useHabitActions(date?: string) {
       // Today, unchecked, and its part of the day has passed → show why / minimum first.
       if (isToday && stateOn(h, idx, ctx.today, ctx) === 'pending') {
         const behind = behindPace([h], idx, ctx).length > 0;
-        const has = h.why || h.minimum_version || h.messages.length || settings.reminders.messages.length;
+        const has =
+          h.why ||
+          h.minimum_version ||
+          h.messages.length ||
+          settings.reminders.messages.length ||
+          feelingContrast(h, idx);
         if (has && sectionPassed(h, habits, settings.reminders, new Date(), behind)) return setMotivation(h);
       }
       setDetail(h);
@@ -110,9 +132,10 @@ export function useHabitActions(date?: string) {
         {
           label: skipped ? 'Undo skip' : 'Skip',
           onPress: () => {
-            Haptics.selectionAsync().catch(() => {});
-            if (skipped) unmark(h.id, day);
-            else mark(h.id, 'skipped', day);
+            if (skipped) {
+              Haptics.selectionAsync().catch(() => {});
+              unmark(h.id, day);
+            } else skip(h);
           },
         },
       ];
@@ -120,23 +143,34 @@ export function useHabitActions(date?: string) {
       if (h.kind === 'anchor') out.push({ label: 'Edit', onPress: () => setForm({ habit: h, kind: 'anchor' }) });
       return out;
     },
-    [idx, ctx, day, isToday, mark, unmark, getReady],
+    [idx, ctx, day, isToday, unmark, skip, getReady],
   );
 
-  const dismissFeeling = useCallback(() => setFeeling(null), []);
+  const dismissPrompt = useCallback(() => setAfterPrompt(null), [setAfterPrompt]);
+  const promptHabit = afterPrompt ? habits.find((x) => x.id === afterPrompt.habitId) : undefined;
 
   const overlays = (
     <>
-      {feeling && (
+      {afterPrompt && promptHabit && (
         <FeelingPicker
-          key={feeling.habit.id + feeling.date}
-          habitName={feeling.habit.name}
+          key={`${afterPrompt.habitId}-${afterPrompt.date}-${afterPrompt.reason}`}
+          title={
+            afterPrompt.reason === 'skip' ? (
+              <>How do you feel today?</>
+            ) : afterPrompt.feelings ? (
+              <>
+                How do you feel after <Text style={{ fontWeight: '600' }}>{promptHabit.name}</Text>?
+              </>
+            ) : (
+              <Text style={{ fontWeight: '600' }}>{promptHabit.name}</Text>
+            )
+          }
+          feelings={afterPrompt.feelings}
+          note={afterPrompt.note}
           autoDismiss={settings.feelingAutoDismiss}
-          onDismiss={dismissFeeling}
-          onPick={(f) => {
-            rateFeeling(feeling.habit.id, f, feeling.date);
-            setFeeling(null);
-          }}
+          onDismiss={dismissPrompt}
+          onPick={(f) => rateFeeling(afterPrompt.habitId, f, afterPrompt.date)}
+          onNote={(text) => setNote(afterPrompt.habitId, afterPrompt.date, text)}
         />
       )}
       <MotivationSheet
@@ -152,7 +186,7 @@ export function useHabitActions(date?: string) {
         }}
         onSkip={(h) => {
           setMotivation(null);
-          mark(h.id, 'skipped', day);
+          skip(h);
         }}
         onDetails={(h) => {
           setMotivation(null);
@@ -185,5 +219,5 @@ export function useHabitActions(date?: string) {
     </>
   );
 
-  return { onToggle, onOpen, onDelete, swipeActions, openForm, openChooser, startTimer, getReady, overlays };
+  return { onToggle, onOpen, onDelete, swipeActions, skip, openForm, openChooser, startTimer, getReady, overlays };
 }

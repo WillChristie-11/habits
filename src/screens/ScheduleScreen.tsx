@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '../store';
-import { layoutDay, visibleToday } from '../lib/schedule';
+import { counts, layoutDay, visibleToday } from '../lib/schedule';
 import { TimelineBlock } from '../components/TimelineBlock';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -18,10 +18,10 @@ export function ScheduleScreen() {
   const actions = useHabitActions();
 
   const layout = useMemo(
-    // Activities are logged, not scheduled.
+    // Activities and cut-backs are logged, not scheduled.
     () =>
       layoutDay(
-        habits.filter((h) => h.kind !== 'activity'),
+        habits.filter((h) => counts(h) || h.kind === 'anchor'),
         (h) => visibleToday(h, idx, ctx),
       ),
     [habits, idx, ctx],

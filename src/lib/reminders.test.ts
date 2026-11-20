@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
-import { indexRecords, missedTwiceRisk, todayCompletion } from './schedule';
+import { indexRecords, isMorning, missedTwiceRisk, stateOn, todayCompletion } from './schedule';
 import {
   avoidLine,
   banners,
@@ -38,6 +38,9 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     habit_kind: 'want',
     session_minutes: 15,
     ready_minutes: 3,
+    ask_note: false,
+    check_minutes: 45,
+    locked: false,
     unit: null,
     target_min: null,
     target_max: null,
@@ -396,4 +399,17 @@ test('activities are never expected, missed, flagged, counted or nudged', () => 
   const plan = planNotifications([run], idx, ctx, { ...DEFAULT_REMINDERS }, at('06:00'));
   assert.deepEqual(plan, []);
   assert.deepEqual(banners([run], idx, ctx, R, at('21:00')), []);
+});
+
+test('cut-back habits are never expected, counted, flagged, nudged or in the morning list', () => {
+  const wake = habit(daily, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
+  const snack = habit(daily, { name: 'Snacking', habit_kind: 'cut_back', stack_after: wake.id });
+  const idx = indexRecords([]);
+  assert.equal(stateOn(snack, idx, TODAY, ctx), 'none');
+  assert.equal(missedTwiceRisk(snack, idx, ctx), false);
+  assert.deepEqual(todayCompletion([snack], idx, ctx), { done: 0, total: 0, pct: 0 });
+  assert.equal(isMorning(snack, [wake, snack]), false);
+  const plan = planNotifications([wake, snack], idx, ctx, R, at('06:00'));
+  assert.equal(plan.filter((p) => /Snacking/.test(p.title + p.body)).length, 0);
+  assert.deepEqual(banners([wake, snack], idx, ctx, R, at('21:00')), []);
 });

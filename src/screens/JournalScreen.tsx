@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  InputAccessoryView,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,40 +10,41 @@ import {
   Text,
   TextInput,
   View,
-  type ScrollViewInstance,
   type TextInputInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import Svg, { Circle, Line } from 'react-native-svg';
+import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
-import { pageDates, recapLines, weekCounts } from '../lib/journal';
-import { WEEKDAY_NAMES, addDays, fromKey, weekStart, weekday } from '../lib/dates';
+import { recapLines, weekCounts } from '../lib/journal';
+import { wakeAnchor, wakeWeek, minutesOfDay } from '../lib/insights';
+import { WEEKDAY_NAMES, WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const SAVE_DEBOUNCE_MS = 400;
+const DONE_BAR = 'journal-done';
+/** Journal text only; the rest of the app keeps the system font. */
+export const JOURNAL_FONT = 'Lora_400Regular';
 
 /**
- * One free-form page per day. Opens on today's page with the keyboard up; today is editable
- * until midnight, past pages are read-only. Nothing here is counted, flagged or reminded about.
+ * One free-form page per day. Opens on today's page without the keyboard; tap the text to write.
+ * Today is editable until midnight, other days are read-only. Nothing here is counted, flagged or
+ * reminded about.
  */
 export function JournalScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const t = useTheme();
   const { pages, ctx } = useStore();
   const [picked, setPicked] = useState<string | null>(null);
   const date = picked && picked < ctx.today ? picked : ctx.today; // follows midnight
   const isToday = date === ctx.today;
-  const dates = pageDates(pages, ctx.today);
   const editor = useRef<TextInputInstance>(null);
 
-  // Opening the tab: back to today with the keyboard ready.
+  // Opening the tab: back to today, keyboard down.
   useFocusEffect(
     useCallback(() => {
       setPicked(null);
-      const id = setTimeout(() => editor.current?.focus(), 250);
-      return () => clearTimeout(id);
     }, []),
   );
 
@@ -50,33 +53,47 @@ export function JournalScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={[s.screen, { paddingTop: insets.top }]}
     >
-      <DateStrip dates={dates} selected={date} today={ctx.today} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />
+      <WeekStrip
+        selected={date}
+        today={ctx.today}
+        pages={pages}
+        onSelect={(d) => setPicked(d === ctx.today ? null : d)}
+      />
 
-      <View style={s.head}>
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={s.date}>
           {fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
         </Text>
-        <Pressable onPress={() => router.push('/settings')} hitSlop={12} accessibilityLabel="Settings">
-          <SymbolView name="gearshape" size={22} tintColor={t.textMuted} fallback={<Text style={s.gear}>⚙︎</Text>} />
-        </Pressable>
-      </View>
-
-      {weekday(date) === 0 && <SundayRecap sunday={date} />}
-
-      {isToday ? (
-        <TodayPage key={date} date={date} inputRef={editor} />
-      ) : (
-        <ScrollView contentContainerStyle={s.pastWrap}>
-          <Text style={s.pastText} selectable>
+        {weekday(date) === 0 && <SundayRecap sunday={date} />}
+        {isToday ? (
+          <TodayPage key={date} date={date} inputRef={editor} />
+        ) : pages[date] ? (
+          <Text style={s.pageText} selectable>
             {pages[date]}
           </Text>
-        </ScrollView>
+        ) : (
+          <Text style={s.nothing}>Nothing written this day.</Text>
+        )}
+      </ScrollView>
+
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={DONE_BAR}>
+          <View style={s.doneBar}>
+            <Pressable onPress={() => Keyboard.dismiss()} hitSlop={10} accessibilityRole="button">
+              <Text style={s.doneText}>Done</Text>
+            </Pressable>
+          </View>
+        </InputAccessoryView>
       )}
     </KeyboardAvoidingView>
   );
 }
 
-/** Today's page: plain text, saved as you type. */
+/** Today's page: plain text in Lora, saved as you type. Grows with the text; the screen scrolls. */
 function TodayPage({ date, inputRef }: { date: string; inputRef: React.RefObject<TextInputInstance | null> }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
@@ -115,82 +132,122 @@ function TodayPage({ date, inputRef }: { date: string; inputRef: React.RefObject
       }}
       onBlur={flush}
       multiline
+      scrollEnabled={false}
       textAlignVertical="top"
       placeholder="Today is for…"
       placeholderTextColor={t.textMuted}
       keyboardAppearance={t.dark ? 'dark' : 'light'}
-      scrollEnabled
+      inputAccessoryViewID={DONE_BAR}
       autoCorrect
     />
   );
 }
 
-/** Days that have a page, plus today. Newest on the right; tap to read a past day. */
-function DateStrip({
-  dates,
+/** Mon–Sun with ‹ › for other weeks, like Today. A dot marks days with writing. */
+function WeekStrip({
   selected,
   today,
+  pages,
   onSelect,
 }: {
-  dates: string[];
   selected: string;
   today: string;
+  pages: Record<string, string>;
   onSelect(d: string): void;
 }) {
   const s = useThemedStyles(makeStyles);
-  const scroller = useRef<ScrollViewInstance>(null);
+  const days = weekDays(selected);
+  const current = weekStart(selected) === weekStart(today);
+  const shift = (dir: -1 | 1) => {
+    if (dir === 1 && current) return;
+    Haptics.selectionAsync().catch(() => {});
+    const next = addDays(selected, dir * 7);
+    onSelect(next > today ? today : next);
+  };
+  const fa = fromKey(days[0]);
+  const fb = fromKey(days[6]);
+  const m = (d: Date) => d.toLocaleDateString(undefined, { month: 'short' });
+  const label = current
+    ? 'This week'
+    : fa.getMonth() === fb.getMonth()
+      ? `${m(fa)} ${fa.getDate()} – ${fb.getDate()}`
+      : `${m(fa)} ${fa.getDate()} – ${m(fb)} ${fb.getDate()}`;
   return (
-    <ScrollView
-      ref={scroller}
-      horizontal
-      style={{ flexGrow: 0 }}
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={s.strip}
-      onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: false })}
-    >
-      {dates.map((d, i) => {
-        const day = fromKey(d);
-        const newMonth = i === 0 || fromKey(dates[i - 1]).getMonth() !== day.getMonth();
-        const active = d === selected;
-        return (
-          <Pressable
-            key={d}
-            onPress={() => onSelect(d)}
-            style={[s.pill, active && s.pillActive]}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={day.toDateString()}
-          >
-            <Text style={[s.pillTop, active && s.pillTextActive]}>
-              {newMonth ? day.toLocaleDateString(undefined, { month: 'short' }) : WEEKDAY_NAMES[weekday(d)]}
-            </Text>
-            <Text style={[s.pillNum, active && s.pillTextActive]}>{d === today ? 'Today' : day.getDate()}</Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <View style={s.strip}>
+      <View style={s.stripHead}>
+        <Pressable onPress={() => shift(-1)} hitSlop={12} accessibilityLabel="Previous week">
+          <Text style={s.chev}>‹</Text>
+        </Pressable>
+        <Text style={s.stripLabel}>{label}</Text>
+        <Pressable onPress={() => shift(1)} hitSlop={12} disabled={current} accessibilityLabel="Next week">
+          <Text style={[s.chev, current && { opacity: 0.25 }]}>›</Text>
+        </Pressable>
+      </View>
+      <View style={s.days}>
+        {days.map((d) => {
+          const future = d > today;
+          const sel = d === selected;
+          return (
+            <Pressable
+              key={d}
+              disabled={future}
+              onPress={() => onSelect(d)}
+              style={[s.day, sel && s.daySel, future && { opacity: 0.35 }]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: sel, disabled: future }}
+              accessibilityLabel={fromKey(d).toDateString()}
+            >
+              <Text style={[s.dow, sel && s.dayTextSel]}>{WEEKDAY_SHORT[weekday(d)]}</Text>
+              <Text style={[s.num, sel && s.dayTextSel, d === today && !sel && s.todayNum]}>{Number(d.slice(8))}</Text>
+              <View style={[s.pageDot, pages[d]?.trim() ? (sel ? s.pageDotSel : s.pageDotOn) : null]} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
 /**
- * Sundays: what I did this week (counts and totals only), the first line of each page Mon–Sat,
- * last week's intention, then one optional line for the coming week.
+ * Sundays: what I did this week (counts and totals only, with any "what did you do" lines),
+ * wake-up times, the first line of each page Mon–Sat, last week's intention, then one optional
+ * line for the coming week.
  */
 function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const { habits, idx, ctx, pages, weeks, saveWeek } = useStore();
-  const counts = weekCounts(habits, idx, ctx, sunday);
+  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences } = useStore();
+  const counts = weekCounts(habits, idx, ctx, sunday, occurrences);
   const lines = recapLines(pages, sunday);
+  const wake = wakeWeek(wakeAnchor(habits), idx, weekDays(sunday));
   const thisWeek = weeks[weekStart(sunday)];
   const nextWeek = addDays(sunday, 1);
   const editable = sunday === ctx.today;
   const [next, setNext] = useState(weeks[nextWeek] ?? '');
-  if (!counts.length && !lines.length && !thisWeek && !editable && !weeks[nextWeek]) return null;
+  if (!counts.length && !lines.length && !thisWeek && !editable && !weeks[nextWeek] && !wake.text) return null;
   return (
     <View style={s.recap}>
       <Text style={s.recapLabel}>This week</Text>
-      {counts.length > 0 && <Text style={s.recapCounts}>{counts.map((c) => c.text).join(' · ')}</Text>}
+      {counts.map((c) => (
+        <View key={c.habit.id}>
+          <Text style={s.recapCount}>{c.text}</Text>
+          {c.notes.map((n) => (
+            <Text key={n.date} style={s.recapNote} numberOfLines={2}>
+              <Text style={s.recapDay}>{WEEKDAY_NAMES[weekday(n.date)]} </Text>
+              {n.text}
+            </Text>
+          ))}
+        </View>
+      ))}
+      {wake.text && (
+        <View style={s.wakeRow}>
+          <Text style={s.recapLine}>
+            <Text style={s.recapDay}>Sleep </Text>
+            {wake.text}
+          </Text>
+          <WakeChart times={wake.times.map((x) => x.time)} color={t.accent} track={t.border} />
+        </View>
+      )}
       {lines.map((l) => (
         <Text key={l.date} style={s.recapLine} numberOfLines={2}>
           <Text style={s.recapDay}>{WEEKDAY_NAMES[weekday(l.date)]} </Text>
@@ -231,41 +288,89 @@ function SundayRecap({ sunday }: { sunday: string }) {
   );
 }
 
+/** Mon–Sun wake times as dots: higher = earlier. Days without a time get a faint tick. */
+function WakeChart({ times, color, track }: { times: (string | null)[]; color: string; track: string }) {
+  const W = 112;
+  const H = 30;
+  const known = times.filter((x): x is string => !!x).map(minutesOfDay);
+  const lo = Math.min(...known) - 15;
+  const hi = Math.max(...known) + 15;
+  const step = W / 7;
+  return (
+    <Svg width={W} height={H} accessibilityLabel="Wake times this week">
+      <Line x1={0} y1={H - 1} x2={W} y2={H - 1} stroke={track} strokeWidth={1} />
+      {times.map((tm, i) => {
+        const cx = step * i + step / 2;
+        if (!tm) return <Circle key={i} cx={cx} cy={H - 4} r={1.5} fill={track} />;
+        const cy = 4 + ((minutesOfDay(tm) - lo) / Math.max(1, hi - lo)) * (H - 10);
+        return <Circle key={i} cx={cx} cy={cy} r={3.5} fill={color} />;
+      })}
+    </Svg>
+  );
+}
+
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     screen: { flex: 1, backgroundColor: t.background },
-    strip: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
-    pill: { alignItems: 'center', minWidth: 48, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 12 },
-    pillActive: { backgroundColor: t.accent },
-    pillTop: { fontSize: 11, fontWeight: '600', color: t.textMuted },
-    pillNum: { fontSize: 15, fontWeight: '700', color: t.text, marginTop: 1 },
-    pillTextActive: { color: t.onAccent },
-    head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 4 },
-    date: { fontSize: 20, fontWeight: '700', color: t.text },
-    gear: { fontSize: 20, color: t.textMuted },
+    strip: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4 },
+    stripHead: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 6 },
+    chev: { fontSize: 22, color: t.accent, lineHeight: 24, paddingHorizontal: 2 },
+    stripLabel: { fontSize: 14, fontWeight: '600', color: t.text },
+    days: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+    day: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 12, gap: 2 },
+    daySel: { backgroundColor: t.accent },
+    dow: { fontSize: 11, fontWeight: '600', color: t.textMuted },
+    num: { fontSize: 15, fontWeight: '700', color: t.text, fontVariant: ['tabular-nums'] },
+    todayNum: { color: t.accent },
+    dayTextSel: { color: t.onAccent },
+    pageDot: { width: 4, height: 4, borderRadius: 2, marginTop: 1 },
+    pageDotOn: { backgroundColor: t.accent },
+    pageDotSel: { backgroundColor: t.onAccent },
+    scroll: { flexGrow: 1, paddingBottom: 80 },
+    date: { fontSize: 22, fontWeight: '700', color: t.text, paddingHorizontal: 20, paddingTop: 10 },
     page: {
-      flex: 1,
+      minHeight: 360,
       paddingHorizontal: 20,
       paddingTop: 12,
       paddingBottom: 24,
-      fontSize: 17,
-      lineHeight: 25,
+      fontFamily: JOURNAL_FONT,
+      fontSize: 19,
+      lineHeight: 29,
       color: t.text,
     },
-    pastWrap: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 60 },
-    pastText: { fontSize: 17, lineHeight: 25, color: t.text },
+    pageText: {
+      paddingHorizontal: 20,
+      paddingTop: 12,
+      fontFamily: JOURNAL_FONT,
+      fontSize: 19,
+      lineHeight: 29,
+      color: t.text,
+    },
+    nothing: { paddingHorizontal: 20, paddingTop: 16, fontSize: 15, color: t.textMuted },
+    doneBar: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      backgroundColor: t.surface,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: t.border,
+    },
+    doneText: { fontSize: 16, fontWeight: '700', color: t.accent },
     recap: {
       marginHorizontal: 16,
-      marginTop: 10,
+      marginTop: 12,
       padding: 12,
       borderRadius: 12,
       backgroundColor: t.surface,
-      gap: 3,
+      gap: 4,
     },
     recapLabel: { fontSize: 11, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-    recapCounts: { fontSize: 14, color: t.text, fontWeight: '600', lineHeight: 20, marginBottom: 2 },
+    recapCount: { fontSize: 14, color: t.text, fontWeight: '600', lineHeight: 20 },
+    recapNote: { fontSize: 13, color: t.textMuted, lineHeight: 18, marginLeft: 10 },
     recapLine: { fontSize: 13, color: t.textMuted, lineHeight: 18 },
     recapDay: { fontWeight: '700', color: t.text },
+    wakeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 2 },
     recapInput: {
       marginTop: 6,
       backgroundColor: t.background,

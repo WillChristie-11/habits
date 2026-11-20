@@ -29,7 +29,14 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-router",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Lets you lock cut-back habits behind Face ID."
+        }
+      ]
     ],
     "scheme": "habits",
     "extra": {
