@@ -4,10 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import type { Habit, Priority } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
 import { Button } from '../components/ui';
-import { cancelTimerEnd, scheduleTimerEnd } from '../lib/notifications';
+import { useEndTime } from '../components/useEndTime';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const RING = 240;
@@ -23,50 +24,67 @@ const mmss = (ms: number) => {
  * Start. Avoid habits go straight into their session timer; other habits and activities open a
  * "now doing" view with Done.
  */
+type ReadyItem = Pick<
+  Habit,
+  'id' | 'name' | 'kind' | 'habit_kind' | 'ladder' | 'ladder_index' | 'pair_with' | 'session_minutes' | 'ready_minutes'
+>;
+
+/** A priority shown like an item: no ladder or session, a 3-minute get-ready. */
+const priorityItem = (p: Priority): ReadyItem => ({
+  id: -p.id,
+  name: p.text,
+  kind: 'habit',
+  habit_kind: 'want',
+  ladder: [],
+  ladder_index: 0,
+  pair_with: null,
+  session_minutes: 0,
+  ready_minutes: 3,
+});
+
 export function ReadyScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const params = useLocalSearchParams<{ habitId: string; date?: string }>();
-  const { habits, idx, ctx, mark } = useStore();
-  const item = habits.find((h) => h.id === Number(params.habitId));
+  // Either a habit / anchor (habitId) or one of Today's priorities (priorityId).
+  const params = useLocalSearchParams<{ habitId?: string; priorityId?: string; date?: string }>();
+  const { habits, idx, ctx, mark, priorities, togglePriority } = useStore();
+  const habit = habits.find((h) => h.id === Number(params.habitId));
+  const priority = params.priorityId ? priorities.find((p) => p.id === Number(params.priorityId)) : undefined;
+  const item: ReadyItem | undefined = habit ?? (priority ? priorityItem(priority) : undefined);
   const date = params.date ?? ctx.today;
-  const alertKey = `ready-${params.habitId}`;
 
-  const [startedAt] = useState(() => Date.now());
-  const [nowMs, setNowMs] = useState(startedAt);
   const [skipped, setSkipped] = useState(false);
   const [doing, setDoing] = useState(false);
   const total = (item?.ready_minutes ?? 3) * 60_000;
-  const remaining = skipped ? 0 : Math.max(0, total - (nowMs - startedAt));
+  // Saved end time + a notification, so it stays right if the app is backgrounded or closed.
+  const timer = useEndTime(
+    `ready-${habit ? habit.id : `p${params.priorityId}`}`,
+    item ? { title: `Time for ${item.name}`, body: 'Your get-ready countdown is up.' } : null,
+  );
+  const remaining = skipped ? 0 : (timer.remaining ?? total);
   const ended = remaining === 0;
 
-  // Background alert in case the phone is locked when the countdown ends.
   const armed = useRef(false);
   useEffect(() => {
     if (!item || armed.current) return;
     armed.current = true;
-    scheduleTimerEnd(alertKey, new Date(startedAt + total), `Time for ${item.name}`, 'Your get-ready countdown is up.');
-    return () => {
-      cancelTimerEnd(alertKey);
-    };
-  }, [item, alertKey, startedAt, total]);
-
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 250);
-    return () => clearInterval(id);
-  }, []);
+    if (timer.endsAt == null) timer.start(total);
+  }, [item, timer, total]);
 
   const buzzed = useRef(false);
   useEffect(() => {
     if (ended && !buzzed.current) {
       buzzed.current = true;
-      cancelTimerEnd(alertKey);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
-  }, [ended, alertKey]);
+  }, [ended]);
 
-  const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  const close = () => {
+    timer.clear();
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  };
 
   if (!item) {
     return (
@@ -81,10 +99,10 @@ export function ReadyScreen() {
 
   const avoid = item.kind === 'habit' && item.habit_kind === 'avoid';
   const step = item.ladder[item.ladder_index] ?? null;
-  const done = stateOn(item, idx, date, ctx) === 'done';
+  const done = habit ? stateOn(habit, idx, date, ctx) === 'done' : priority?.done_on != null;
 
   const start = () => {
-    cancelTimerEnd(alertKey);
+    timer.clear();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (avoid) {
       router.replace({ pathname: '/timer', params: { habitId: String(item.id), date } });
@@ -114,7 +132,8 @@ export function ReadyScreen() {
               title={item.kind === 'anchor' ? 'Done ✓' : 'Done, check it off ✓'}
               onPress={async () => {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-                await mark(item.id, 'done', date);
+                if (habit) await mark(habit.id, 'done', date);
+                else if (priority && !priority.done_on) await togglePriority(priority);
                 close();
               }}
             />

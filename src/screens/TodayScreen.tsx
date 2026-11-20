@@ -14,6 +14,8 @@ import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
+import { ResetButton } from '../components/ResetButton';
+import { Priorities } from '../components/Priorities';
 import { WeekIntentionLine } from '../components/WeekIntention';
 import { LogRow } from '../components/LogRow';
 import { AnchorRow } from '../components/AnchorRow';
@@ -74,6 +76,7 @@ export function TodayScreen() {
             </Pressable>
           ) : null
         }
+        below={isToday ? <ResetButton /> : undefined}
         links={isToday ? [] : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]}
       />
 
@@ -82,6 +85,8 @@ export function TodayScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Today's priorities sit at the very top (a past day shows the ones checked that day). */}
+        <Priorities date={date} />
         {showNow && (
           <NowView
             groups={groups}

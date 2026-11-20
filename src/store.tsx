@@ -4,7 +4,7 @@ import { AppearanceContext, DEFAULT_APPEARANCE, type Appearance } from './theme'
 import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { todayKey } from './lib/dates';
-import type { DayRecord, Habit, HabitInput, Meta, Occurrence, RecordStatus, ReminderSettings } from './types';
+import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
 
@@ -14,6 +14,8 @@ export interface Settings {
   reminders: ReminderSettings;
   /** notification taps already applied (so a replayed response isn't applied twice) */
   handledResponses: string[];
+  /** Running timers' end times (ms since epoch) by key, so they survive the app being closed. */
+  timers: Record<string, number>;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -21,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   appearance: DEFAULT_APPEARANCE,
   reminders: DEFAULT_REMINDERS,
   handledResponses: [],
+  timers: {},
 };
 
 /**
@@ -39,6 +42,13 @@ export interface AfterPrompt {
 
 interface Store {
   ready: boolean;
+  /** Today's priorities (all of them; see lib/priorities for what a day shows). */
+  priorities: Priority[];
+  addPriority(text: string): Promise<void>;
+  togglePriority(p: Priority): Promise<void>;
+  removePriority(id: number): Promise<void>;
+  /** Save (or clear, with null) a timer's end time. */
+  setTimerEnd(key: string, endsAt: number | null): void;
   /** Cut-back logs, oldest first. */
   occurrences: Occurrence[];
   /** Log a cut-back occurrence now; returns its id. */
@@ -105,18 +115,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [pages, setPages] = useState<Record<string, string>>({});
   const [weeks, setWeeks] = useState<Record<string, string>>({});
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
+  const [priorities, setPriorities] = useState<Priority[]>([]);
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o] = await Promise.all([
+    const [h, r, p, w, o, pr] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
       db.loadWeeks(),
       db.loadOccurrences(),
+      db.loadPriorities(),
     ]);
+    setPriorities(pr);
     setHabits(h);
     setOccurrences(o);
     setRecords(r);
@@ -165,6 +178,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const store = useMemo<Store>(
     () => ({
       ready,
+      priorities,
+      async addPriority(text) {
+        if (!text.trim()) return;
+        await db.addPriority(text.trim(), today);
+        await reload();
+      },
+      async togglePriority(p) {
+        await db.setPriorityDone(p.id, p.done_on ? null : today);
+        await reload();
+      },
+      async removePriority(id) {
+        await db.deletePriority(id);
+        await reload();
+      },
+      setTimerEnd(key, endsAt) {
+        setSettings((cur) => {
+          const timers = { ...cur.timers };
+          if (endsAt == null) delete timers[key];
+          else timers[key] = endsAt;
+          // Drop anything that ended more than a day ago.
+          for (const k of Object.keys(timers)) if (timers[k] < Date.now() - 86_400_000) delete timers[k];
+          db.saveSetting('timers', JSON.stringify(timers));
+          return { ...cur, timers };
+        });
+      },
       occurrences,
       afterPrompt,
       setAfterPrompt,
@@ -314,6 +352,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       pages,
       weeks,
       occurrences,
+      priorities,
       afterPrompt,
       idx,
       ctx,

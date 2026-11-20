@@ -45,10 +45,6 @@ export function NotificationBridge() {
         else router.push({ pathname: '/tempted', params: { occ: String(r.occurrenceId) } });
         return;
       }
-      if (r.type === 'wait') {
-        router.push('/tempted');
-        return;
-      }
       if (r.habitId == null || !r.date) return;
       if (!s.habits.some((h) => h.id === r.habitId)) return;
       if (r.action === 'done') await s.mark(r.habitId, 'done', r.date);

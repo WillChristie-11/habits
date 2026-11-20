@@ -6,6 +6,7 @@ import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
 import { wakeAnchor } from '../lib/insights';
+import { promptPriority } from './Priorities';
 import type { SwipeAction } from './SwipeRow';
 import { FeelingPicker } from './FeelingPicker';
 import { HabitForm } from '../screens/HabitForm';
@@ -19,8 +20,21 @@ import { HabitDetail } from '../screens/HabitDetail';
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
 export function useHabitActions(date?: string) {
-  const { habits, idx, ctx, settings, mark, unmark, rateFeeling, removeHabit, afterPrompt, setAfterPrompt, setNote } =
-    useStore();
+  const {
+    habits,
+    idx,
+    ctx,
+    settings,
+    mark,
+    unmark,
+    rateFeeling,
+    removeHabit,
+    afterPrompt,
+    setAfterPrompt,
+    setNote,
+    priorities,
+    addPriority,
+  } = useStore();
   const day = date ?? ctx.today;
   const isToday = day === ctx.today;
   const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind } | null>(null);
@@ -89,8 +103,11 @@ export function useHabitActions(date?: string) {
     if (Platform.OS === 'web') return setForm({ habit: null, kind: 'habit' }); // no action sheets on web
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
-        { title: 'Add', options: [...labels, 'Cancel'], cancelButtonIndex: 3 },
-        (i) => i < 3 && setForm({ habit: null, kind: kinds[i] }),
+        { title: 'Add', options: [...labels, 'Priority', 'Cancel'], cancelButtonIndex: 4 },
+        (i) => {
+          if (i < 3) setForm({ habit: null, kind: kinds[i] });
+          else if (i === 3) setTimeout(() => promptPriority(priorities, addPriority), 300);
+        },
       );
     } else {
       Alert.alert('Add', undefined, [
@@ -98,7 +115,7 @@ export function useHabitActions(date?: string) {
         { text: 'Cancel', style: 'cancel' as const },
       ]);
     }
-  }, []);
+  }, [priorities, addPriority]);
 
   /** Tapping a habit's name: its detail sheet (with Edit). Anchors go straight to their form. */
   const onOpen = useCallback((h: Habit) => {

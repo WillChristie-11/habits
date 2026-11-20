@@ -8,6 +8,7 @@ import { TimelineBlock } from '../components/TimelineBlock';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
+import { ResetButton } from '../components/ResetButton';
 import { useThemedStyles, type Theme } from '../theme';
 
 /** Today's plan: anchors and timed habits at their times, flexible habits in their windows. */
@@ -32,7 +33,7 @@ export function ScheduleScreen() {
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader dateLine={dateLine} title="Schedule" />
+      <ScreenHeader dateLine={dateLine} title="Schedule" below={<ResetButton />} />
 
       <ScrollView
         scrollEnabled={scrollEnabled}

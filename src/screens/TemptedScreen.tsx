@@ -9,7 +9,8 @@ import { FEELINGS } from '../types';
 import { useStore } from '../store';
 import { isCutBack } from '../lib/schedule';
 import { afterFeelingSummary, recentNotes } from '../lib/insights';
-import { cancelFollowUp, cancelWaitEnd, scheduleFollowUp, scheduleWaitEnd } from '../lib/notifications';
+import { cancelFollowUp, scheduleFollowUp } from '../lib/notifications';
+import { useEndTime } from '../components/useEndTime';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const WAIT_MIN = 10;
@@ -93,15 +94,13 @@ function CutBackCard({
   const s = useThemedStyles(makeStyles);
   const { logOccurrence, removeOccurrence, now } = useStore();
   const [justLogged, setJustLogged] = useState<number | null>(null);
-  const [waitUntil, setWaitUntil] = useState<number | null>(null);
-  const [tick, setTick] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!waitUntil) return;
-    const t = setInterval(() => setTick(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [waitUntil]);
-  const left = waitUntil ? Math.max(0, waitUntil - tick) : 0;
+  // Saved end time + notification, so the wait stays right if you leave the app.
+  const wait = useEndTime(`wait-${habit.id}`, {
+    title: '10 minutes are up',
+    body: 'Check in with yourself: still want it?',
+  });
+  const waitUntil = wait.endsAt;
+  const left = wait.remaining ?? 0;
   useEffect(() => {
     if (waitUntil && left === 0) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, [waitUntil, left]);
@@ -141,15 +140,9 @@ function CutBackCard({
   };
   const startWait = () => {
     Haptics.selectionAsync().catch(() => {});
-    const at = Date.now() + WAIT_MIN * 60_000;
-    setWaitUntil(at);
-    setTick(Date.now());
-    scheduleWaitEnd(habit.id, new Date(at));
+    wait.start(WAIT_MIN * 60_000);
   };
-  const stopWait = () => {
-    setWaitUntil(null);
-    cancelWaitEnd(habit.id);
-  };
+  const stopWait = () => wait.clear();
 
   return (
     <View style={s.card}>

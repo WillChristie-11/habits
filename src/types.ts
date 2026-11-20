@@ -107,6 +107,17 @@ export interface Occurrence {
   note: string | null;
 }
 
+/**
+ * A one-off task for today. Never counted, flagged or reminded about. Open ones carry over to the
+ * next day until checked; a checked one stays on the day it was checked.
+ */
+export interface Priority {
+  id: number;
+  text: string;
+  created_on: string; // YYYY-MM-DD
+  done_on: string | null; // YYYY-MM-DD
+}
+
 /** Computed state of an item on one day, used for dots and progress. */
 export type DayState =
   | 'done'

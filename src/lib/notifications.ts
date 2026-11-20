@@ -12,10 +12,9 @@ export const ACTION_READY = 'ready';
 /** Opens the app on the "Get ready" countdown. */
 const READY_BUTTON = { identifier: ACTION_READY, buttonTitle: 'Get ready', options: { opensAppToForeground: true } };
 const TIMER_PREFIX = 'timer-';
-/** Scheduled outside the planner (cut-back follow-ups, Wait 10 min); re-planning leaves them alone. */
+/** Scheduled outside the planner (timers, cut-back follow-ups); re-planning leaves them alone. */
 const FOLLOW_PREFIX = 'follow-';
-const WAIT_PREFIX = 'wait-';
-const KEEP = [TIMER_PREFIX, FOLLOW_PREFIX, WAIT_PREFIX];
+const KEEP = [TIMER_PREFIX, FOLLOW_PREFIX];
 export const FEEL_CATEGORY = 'cutback-feel';
 export const ACTION_NOTE = 'note';
 const FEEL_ACTION = /^feel-([1-5])$/;
@@ -77,26 +76,6 @@ export async function cancelFollowUp(occurrenceId: number) {
   await Notifications.cancelScheduledNotificationAsync(`${FOLLOW_PREFIX}${occurrenceId}`).catch(() => {});
 }
 
-/** The end of a "Wait 10 min", in case the app is closed by then. */
-export async function scheduleWaitEnd(habitId: number, at: Date) {
-  if (!supported || (await getPermission()) !== 'granted') return;
-  await Notifications.scheduleNotificationAsync({
-    identifier: `${WAIT_PREFIX}${habitId}`,
-    content: {
-      title: '10 minutes are up',
-      body: 'Check in with yourself: still want it?',
-      sound: true,
-      data: { type: 'wait', habitId },
-    },
-    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
-  });
-}
-
-export async function cancelWaitEnd(habitId: number) {
-  if (!supported) return;
-  await Notifications.cancelScheduledNotificationAsync(`${WAIT_PREFIX}${habitId}`).catch(() => {});
-}
-
 export async function cancelTimerEnd(habitId: number | string) {
   if (!supported) return;
   await Notifications.cancelScheduledNotificationAsync(`${TIMER_PREFIX}${habitId}`).catch(() => {});
@@ -115,7 +94,7 @@ export async function initNotifications() {
     // summaries don't, because the in-app banners already say the same thing.
     handleNotification: async (n) => {
       const type = (n.request.content.data as { type?: string } | undefined)?.type;
-      const show = type === 'item' || type === 'timer' || type === 'follow' || type === 'wait';
+      const show = type === 'item' || type === 'timer' || type === 'follow';
       return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
     },
   });

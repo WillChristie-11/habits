@@ -6,7 +6,7 @@ import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
 import { Button } from '../components/ui';
-import { cancelTimerEnd, scheduleTimerEnd } from '../lib/notifications';
+import { useEndTime } from '../components/useEndTime';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const RING = 264;
@@ -31,32 +31,26 @@ export function TimerScreen() {
   const habit = habits.find((h) => h.id === Number(params.habitId));
   const date = params.date ?? ctx.today;
 
-  const [startedAt] = useState(() => Date.now());
-  const [nowMs, setNowMs] = useState(startedAt);
   const [keepGoing, setKeepGoing] = useState(false);
   const total = (habit?.session_minutes ?? 15) * 60_000;
-  const elapsed = nowMs - startedAt;
-  const remaining = Math.max(0, total - elapsed);
-  const ended = remaining === 0;
+  // The end time is saved, so reopening the app (even after iOS closed it) resumes the session.
+  const timer = useEndTime(
+    `session-${params.habitId}-${date}`,
+    habit ? { title: `Time's up: ${habit.name}`, body: 'Nice work. Open the app to keep going or finish.' } : null,
+  );
+  const remaining = timer.remaining ?? total;
+  const elapsed = timer.endsAt != null ? total + (timer.now - timer.endsAt) : 0;
+  const ended = timer.ended;
 
-  // Count the start (avoid habits) and arm the background "time's up" alert, once.
+  // Count the start (avoid habits) and start the clock, once; a resumed session keeps its end time.
   const started = useRef(false);
   useEffect(() => {
     if (!habit || started.current) return;
     started.current = true;
+    if (timer.endsAt != null) return;
     startSession(habit, date);
-    scheduleTimerEnd(
-      habit.id,
-      new Date(startedAt + total),
-      `Time's up: ${habit.name}`,
-      'Nice work. Open the app to keep going or finish.',
-    );
-  }, [habit, date, startSession, startedAt, total]);
-
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 250);
-    return () => clearInterval(id);
-  }, []);
+    timer.start(total);
+  }, [habit, date, startSession, total, timer]);
 
   const buzzed = useRef(false);
   useEffect(() => {
@@ -81,7 +75,7 @@ export function TimerScreen() {
   const nextStep = habit.ladder[habit.ladder_index + 1] ?? null;
 
   const close = () => {
-    cancelTimerEnd(habit.id);
+    timer.clear();
     router.back();
   };
 

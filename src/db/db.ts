@@ -8,6 +8,7 @@ import type {
   JournalPage,
   Meta,
   Occurrence,
+  Priority,
   RecordStatus,
 } from '../types';
 import { entryToLines } from '../lib/journal';
@@ -21,7 +22,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -198,6 +199,17 @@ async function open() {
         );
       `);
     });
+  }
+  if (version < 12) {
+    // v12: Today's priorities (one-off tasks, never counted).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS priorities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        created_on TEXT NOT NULL,
+        done_on TEXT
+      );
+    `);
   }
   if (version === 0) {
     // Brand-new install: start with a few editable anchors.
@@ -634,4 +646,26 @@ export async function updateOccurrence(
 export async function deleteOccurrence(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM occurrences WHERE id = ?', id);
+}
+
+// --- Today's priorities -----------------------------------------------------------------------
+
+export async function loadPriorities(): Promise<Priority[]> {
+  const db = await getDb();
+  return db.getAllAsync<Priority>('SELECT id, text, created_on, done_on FROM priorities ORDER BY id');
+}
+
+export async function addPriority(text: string, date: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('INSERT INTO priorities (text, created_on) VALUES (?, ?)', text, date);
+}
+
+export async function setPriorityDone(id: number, date: string | null): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE priorities SET done_on = ? WHERE id = ?', date, id);
+}
+
+export async function deletePriority(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM priorities WHERE id = ?', id);
 }

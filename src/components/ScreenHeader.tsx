@@ -9,12 +9,14 @@ interface Props {
   title: string;
   /** Right side of the title row (e.g. the progress ring). */
   right?: React.ReactNode;
+  /** Shown under the title (the Reset button). */
+  below?: React.ReactNode;
   /** Small text links under the title (e.g. "← Back to today"). */
   links?: { label: string; onPress: () => void; strong?: boolean }[];
 }
 
 /** Shared header for the tabs: date and settings; big title; optional small links. (＋ floats bottom-right.) */
-export function ScreenHeader({ dateLine, title, right, links = [] }: Props) {
+export function ScreenHeader({ dateLine, title, right, below, links = [] }: Props) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   return (
@@ -37,6 +39,7 @@ export function ScreenHeader({ dateLine, title, right, links = [] }: Props) {
           <Text style={s.title} numberOfLines={1}>
             {title}
           </Text>
+          {below && <View style={{ marginTop: 8 }}>{below}</View>}
           {links.length > 0 && (
             <View style={s.actions}>
               {links.map((l) => (
