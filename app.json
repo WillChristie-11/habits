@@ -8,7 +8,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.personal.habits"
+      "bundleIdentifier": "com.personal.habits",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,6 +31,19 @@
       "expo-router",
       "@react-native-community/datetimepicker"
     ],
-    "scheme": "habits"
+    "scheme": "habits",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "c2755683-bb52-41fc-a00f-1506a4eb9356"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c2755683-bb52-41fc-a00f-1506a4eb9356"
+    }
   }
 }
