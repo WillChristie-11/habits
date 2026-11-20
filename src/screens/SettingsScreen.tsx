@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
-import { Button, Help, Label, Segmented, Toggle } from '../components/ui';
+import { Button, Help, Label, Segmented, Stepper, Toggle } from '../components/ui';
 import { TimeField } from '../components/TimeField';
 import { getPermission, requestPermission, type PermissionState } from '../lib/notifications';
 import { formatTime } from '../lib/dates';
@@ -101,11 +101,59 @@ export function SettingsScreen() {
           <Help>Reminders for anchors and timed habits are set on each item.</Help>
         </View>
 
+        <Text style={[s.group, { marginTop: 32 }]}>Random check-ins</Text>
+        <View style={{ marginTop: 10, gap: 10 }}>
+          <Toggle
+            label="Check-ins"
+            note="A few nudges at unpredictable times about something still open today."
+            value={r.checkins.enabled}
+            onChange={(enabled) => updateReminders({ checkins: { ...r.checkins, enabled } })}
+          />
+          {r.checkins.enabled && (
+            <>
+              <View style={s.timeRow}>
+                <Text style={s.timeLabel}>Per day</Text>
+                <Stepper
+                  value={r.checkins.count}
+                  min={1}
+                  max={6}
+                  onChange={(count) => updateReminders({ checkins: { ...r.checkins, count } })}
+                />
+              </View>
+              <View style={s.timeRow}>
+                <Text style={s.timeLabel}>From</Text>
+                <TimeField
+                  value={r.checkins.start}
+                  onChange={(start) => updateReminders({ checkins: { ...r.checkins, start } })}
+                />
+              </View>
+              <View style={s.timeRow}>
+                <Text style={s.timeLabel}>Until</Text>
+                <TimeField
+                  value={r.checkins.end}
+                  onChange={(end) => updateReminders({ checkins: { ...r.checkins, end } })}
+                />
+              </View>
+              <View style={s.timeRow}>
+                <Text style={s.timeLabel}>At least apart</Text>
+                <Stepper
+                  value={r.checkins.spacing}
+                  min={30}
+                  max={240}
+                  step={15}
+                  suffix="min"
+                  onChange={(spacing) => updateReminders({ checkins: { ...r.checkins, spacing } })}
+                />
+              </View>
+            </>
+          )}
+        </View>
+
         <Text style={[s.group, { marginTop: 32 }]}>Motivational messages</Text>
         <View style={{ marginTop: 8, marginBottom: 10 }}>
           <Help>
-            General lines for any habit. Notifications rotate through these and each habit’s own why and
-            messages, one a day.
+            General lines for any habit. Notifications rotate through these and each habit’s own why and messages, one a
+            day.
           </Help>
         </View>
         <MessageList

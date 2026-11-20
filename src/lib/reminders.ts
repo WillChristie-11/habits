@@ -1,5 +1,5 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
-import type { Habit, ReminderSettings } from '../types';
+import type { CheckinSettings, Habit, ReminderSettings } from '../types';
 import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from './dates';
 import {
   missedTwiceRisk,
@@ -46,7 +46,9 @@ export function ifThenLine(h: Habit): string | null {
 export function obstacleLine(h: Habit): string | null {
   const o = h.obstacle?.trim();
   if (!o) return null;
-  return h.minimum_version ? `If ${o}, then I'll do the minimum: ${h.minimum_version}.` : `If ${o}, then I'll do the minimum version.`;
+  return h.minimum_version
+    ? `If ${o}, then I'll do the minimum: ${h.minimum_version}.`
+    : `If ${o}, then I'll do the minimum version.`;
 }
 
 /** Prefill for the plan's "when": from what it's stacked after, else its scheduled time. */
@@ -59,7 +61,13 @@ export function suggestPlanWhen(anchorName: string | null, scheduledTime: string
 const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
 
 /** Avoid habits still open on `date` (for their own line in banners and notifications). */
-export function avoidPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date = ctx.today, section?: Habit['section']): Habit[] {
+export function avoidPending(
+  habits: Habit[],
+  idx: RecordIndex,
+  ctx: Ctx,
+  date = ctx.today,
+  section?: Habit['section'],
+): Habit[] {
   const c = { ...ctx, today: date };
   return habits
     .filter((h) => isAvoid(h) && (!section || h.section === section))
@@ -77,13 +85,23 @@ export function morningPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date
 }
 
 /** Want habits still expected on `date` (not weekly_count), "never miss twice" ones first. Avoid habits are never counted. */
-export function dayPending(habits: Habit[], idx: RecordIndex, ctx: Ctx, date = ctx.today): { habit: Habit; flagged: boolean }[] {
+export function dayPending(
+  habits: Habit[],
+  idx: RecordIndex,
+  ctx: Ctx,
+  date = ctx.today,
+): { habit: Habit; flagged: boolean }[] {
   const c = { ...ctx, today: date };
   return habits
     .filter((h) => wanted(h) && h.frequency.type !== 'weekly_count')
     .filter((h) => visibleOn(h, idx, c, date) && stateOn(h, idx, date, c) === 'pending')
     .map((habit) => ({ habit, flagged: missedTwiceRisk(habit, idx, c) }))
-    .sort((a, b) => Number(b.flagged) - Number(a.flagged) || sectionRank(a.habit) - sectionRank(b.habit) || a.habit.order - b.habit.order);
+    .sort(
+      (a, b) =>
+        Number(b.flagged) - Number(a.flagged) ||
+        sectionRank(a.habit) - sectionRank(b.habit) ||
+        a.habit.order - b.habit.order,
+    );
 }
 
 const sectionRank = (h: Habit) => ({ morning: 0, evening: 1, week: 2 })[h.section];
@@ -153,7 +171,8 @@ export function banners(habits: Habit[], idx: RecordIndex, ctx: Ctx, r: Reminder
     const items = dayPending(habits, idx, ctx);
     const avoid = avoidPending(habits, idx, ctx);
     const deadline = toMinutes(r.eveningDeadline);
-    if (items.length || avoid.length) evening = { kind: 'evening', items, avoid, minutesLeft: deadline - n, late: n >= deadline };
+    if (items.length || avoid.length)
+      evening = { kind: 'evening', items, avoid, minutesLeft: deadline - n, late: n >= deadline };
   }
   // Once the evening nudge is up it already lists unfinished morning habits, so the morning
   // banner steps aside rather than stacking a duplicate.
@@ -168,8 +187,58 @@ export function banners(habits: Habit[], idx: RecordIndex, ctx: Ctx, r: Reminder
   return out;
 }
 
+/** "Lift: 0/2, 2 days left" */
 export function paceText(w: PaceWarning): string {
-  return `${w.habit.name}: ${w.done}/${w.target} this week, ${w.daysLeft} ${w.daysLeft === 1 ? 'day' : 'days'} left`;
+  return `${w.habit.name}: ${w.done}/${w.target}, ${w.daysLeft} ${w.daysLeft === 1 ? 'day' : 'days'} left`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Random check-ins
+
+/** Small seeded PRNG so a day's check-in times stay put when notifications are re-planned. */
+function seeded(seed: string) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return () => {
+    h += 0x6d2b79f5;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Up to `count` random times in [start, end], at least `spacing` minutes apart, the same for
+ * the same date. Fewer when the window can't fit them.
+ */
+export function checkinTimes(c: CheckinSettings, date: string): string[] {
+  const start = toMinutes(c.start);
+  const end = toMinutes(c.end);
+  const window = end - start;
+  if (!c.enabled || c.count < 1 || window <= 0) return [];
+  const n = Math.min(c.count, Math.floor(window / Math.max(1, c.spacing)) + 1);
+  const slack = window - (n - 1) * c.spacing;
+  const rand = seeded(`checkin-${date}`);
+  const offsets = Array.from({ length: n }, () => Math.floor(rand() * (slack + 1))).sort((a, b) => a - b);
+  return offsets.map((o, i) => fromMinutes(start + o + i * c.spacing));
+}
+
+/**
+ * Which habit a check-in is about: something still open that day, preferring "never miss twice"
+ * habits and behind-pace weekly habits, never the same habit twice in a day when avoidable.
+ */
+export function checkinCandidates(habits: Habit[], idx: RecordIndex, ctx: Ctx, date: string): Habit[] {
+  const c: Ctx = { ...ctx, today: date };
+  const pace = new Set(behindPace(habits, idx, c).map((w) => w.habit.id));
+  const open = habits.filter((h) => {
+    if (h.kind !== 'habit' || !visibleOn(h, idx, c, date)) return false;
+    const s = stateOn(h, idx, date, c);
+    if (s === 'done' || s === 'skipped' || s === 'paused') return false;
+    return s === 'pending' || pace.has(h.id); // weekly_count habits only when behind
+  });
+  const urgent = (h: Habit) => (missedTwiceRisk(h, idx, c) || pace.has(h.id) ? 0 : 1);
+  return open.sort((a, b) => urgent(a) - urgent(b) || a.order - b.order || a.id - b.id);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -201,9 +270,7 @@ function list(names: string[], max = 3): string {
  * list, rotating one step per day (offset by habit so two reminders on one day differ).
  */
 export function pickMessage(h: Habit | null, date: string, general: string[]): string | null {
-  const pool = [...(h?.why ? [h.why] : []), ...(h?.messages ?? []), ...general]
-    .map((m) => m.trim())
-    .filter(Boolean);
+  const pool = [...(h?.why ? [h.why] : []), ...(h?.messages ?? []), ...general].map((m) => m.trim()).filter(Boolean);
   if (!pool.length) return null;
   const day = diffDays('2026-01-01', date);
   const i = (((day + (h?.id ?? 0)) % pool.length) + pool.length) % pool.length;
@@ -250,7 +317,9 @@ export function planNotifications(
         id: `item-${h.id}-${date}`,
         at,
         title: isAvoid(h) ? avoidLine(h) : h.name,
-        body: isAvoid(h) ? avoidBody(h, h.remind_before, date, r.messages) : itemBody(h, h.remind_before, date, r.messages),
+        body: isAvoid(h)
+          ? avoidBody(h, h.remind_before, date, r.messages)
+          : itemBody(h, h.remind_before, date, r.messages),
         category: itemCategory(h),
         data: { type: 'item', habitId: h.id, date },
       });
@@ -282,7 +351,9 @@ export function planNotifications(
       const at = atTime(date, nudgeStart(r));
       const left = dayPending(habits, idx, ctx, date);
       const av = avoidPending(habits, idx, ctx, date);
-      if (future(at) && (left.length || av.length)) {
+      // Behind-pace want habits ride along as a line; there's no separate behind-pace notification.
+      const pace = behindPace(habits, idx, { ...ctx, today: date }).map(paceText);
+      if (future(at) && (left.length || av.length || pace.length)) {
         const names = left.map((x) => (x.flagged ? `${x.habit.name} ⚑` : x.habit.name));
         const first = left[0]?.habit;
         const minimum = first?.minimum_version ? ` Minimum for ${first.name}: ${first.minimum_version}.` : '';
@@ -295,8 +366,10 @@ export function planNotifications(
           at,
           title: left.length
             ? `${left.length} left · 2 h until ${formatTime(r.eveningDeadline)}`
-            : `Still time for ${avoidLines[0]}`,
-          body: [counted, ...(left.length ? avoidLines : avoidLines.slice(1)), ...(msg ? [msg] : [])]
+            : avoidLines.length
+              ? `Still time for ${avoidLines[0]}`
+              : `This week · 2 h until ${formatTime(r.eveningDeadline)}`,
+          body: [counted, ...(left.length ? avoidLines : avoidLines.slice(1)), ...pace, ...(msg ? [msg] : [])]
             .filter(Boolean)
             .join('\n'),
           category: null,
@@ -304,6 +377,28 @@ export function planNotifications(
         });
       }
     }
+  }
+
+  // Random check-ins about something still open (want and avoid habits).
+  for (const date of days) {
+    const times = checkinTimes(r.checkins, date).map((hm) => atTime(date, hm));
+    const pool = checkinCandidates(habits, idx, ctx, date);
+    times.forEach((at, i) => {
+      if (!future(at) || !pool.length) return;
+      // Different habit each time when possible; urgent ones come first in the pool.
+      const h = pool[i % pool.length];
+      const msg = pickMessage(h, date, r.messages);
+      out.push({
+        id: `checkin-${date}-${i}`,
+        at,
+        title: isAvoid(h) ? avoidLine(h) : `Still on track for ${h.name} today?`,
+        body:
+          msg ??
+          (isAvoid(h) ? 'Just start; starting counts.' : h.minimum_version ? `Minimum: ${h.minimum_version}` : ''),
+        category: itemCategory(h),
+        data: { type: 'item', habitId: h.id, date },
+      });
+    });
   }
 
   // Snoozed ("Later") reminders.
@@ -317,7 +412,9 @@ export function planNotifications(
       id: `snooze-${h.id}-${s.date}`,
       at,
       title: isAvoid(h) ? avoidLine(h) : h.name,
-      body: (h.kind === 'habit' && pickMessage(h, s.date, r.messages)) || (isAvoid(h) ? 'Just start; starting counts.' : 'Reminder'),
+      body:
+        (h.kind === 'habit' && pickMessage(h, s.date, r.messages)) ||
+        (isAvoid(h) ? 'Just start; starting counts.' : 'Reminder'),
       category: itemCategory(h),
       data: { type: 'item', habitId: h.id, date: s.date },
     });

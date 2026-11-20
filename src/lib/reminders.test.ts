@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import type { DayRecord, Frequency, Habit, ReminderSettings } from '../types';
 import { DEFAULT_REMINDERS } from '../types';
 import { indexRecords, missedTwiceRisk, todayCompletion } from './schedule';
-import { avoidLine, banners, ifThenLine, obstacleLine, suggestPlanWhen, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
+import { avoidLine, banners, checkinTimes, checkinCandidates, paceText, ifThenLine, obstacleLine, suggestPlanWhen, behindPace, pickMessage, planNotifications, sectionPassed, MAX_SCHEDULED } from './reminders';
 
 const TODAY = '2026-11-19'; // Thursday
 const ctx = { today: TODAY };
-const R: ReminderSettings = { ...DEFAULT_REMINDERS };
+// Check-ins off in the base settings so other tests see only what they're about.
+const R: ReminderSettings = { ...DEFAULT_REMINDERS, checkins: { ...DEFAULT_REMINDERS.checkins, enabled: false } };
 const at = (hm: string, day = TODAY) => new Date(`${day}T${hm}:00`);
 
 let nextId = 1;
@@ -230,4 +231,50 @@ test('obstacle plan names the minimum version when there is one', () => {
   assert.equal(obstacleLine(h), "If I'm wiped out, then I'll do the minimum: one stretch.");
   assert.equal(obstacleLine({ ...h, minimum_version: null }), "If I'm wiped out, then I'll do the minimum version.");
   assert.equal(obstacleLine({ ...h, obstacle: null }), null);
+});
+
+test('check-in times: within the window, spaced, stable for a date, different across dates', () => {
+  const c = { enabled: true, count: 3, start: '09:00', end: '21:00', spacing: 90 };
+  const t = checkinTimes(c, TODAY);
+  assert.equal(t.length, 3);
+  assert.deepEqual(t, checkinTimes(c, TODAY)); // re-planning doesn't move them
+  const mins = t.map((x) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3)));
+  assert.ok(mins[0] >= 9 * 60 && mins[2] <= 21 * 60);
+  assert.ok(mins[1] - mins[0] >= 90 && mins[2] - mins[1] >= 90);
+  assert.notDeepEqual(checkinTimes(c, '2026-11-20'), t);
+  // window too small for the count → fewer; off → none
+  assert.equal(checkinTimes({ ...c, count: 5, start: '20:00', end: '21:00', spacing: 30 }, TODAY).length, 3);
+  assert.deepEqual(checkinTimes({ ...c, enabled: false }, TODAY), []);
+});
+
+test('check-ins pick open habits, never-miss-twice and behind-pace first; avoid habits use their wording', () => {
+  const calm = habit(daily, { name: 'Calm', order: 0 });
+  const read = habit(daily, { name: 'Read', order: 1 });
+  const done = habit(daily, { name: 'Done', order: 2 });
+  const apply = habit(daily, { name: 'Apply', habit_kind: 'avoid', order: 3, ladder: ['Find 1 role'] });
+  const idx = indexRecords([rec(calm, '2026-11-18'), rec(apply, '2026-11-18'), rec(done, TODAY)]); // Read missed yesterday
+  const pool = checkinCandidates([calm, read, done, apply], idx, ctx, TODAY);
+  assert.deepEqual(pool.map((h) => h.name), ['Read', 'Calm', 'Apply']);
+
+  const r = { ...R, morningEnabled: false, eveningEnabled: false, checkins: { enabled: true, count: 3, start: '09:00', end: '21:00', spacing: 90 } };
+  const plan = planNotifications([read, apply], idx, ctx, r, at('06:00')).filter((p) => p.id.startsWith(`checkin-${TODAY}`));
+  assert.equal(plan.length, 3);
+  assert.equal(plan[0].title, 'Still on track for Read today?');
+  assert.equal(plan[0].category, 'item');
+  assert.equal(plan[1].title, '15 min: Find 1 role');
+  assert.equal(plan[1].category, 'start-15');
+  // nothing open today → no check-ins today
+  const none = planNotifications([done], idx, ctx, r, at('06:00')).filter((p) => p.id.startsWith(`checkin-${TODAY}`));
+  assert.equal(none.length, 0);
+});
+
+test('evening nudge carries behind-pace want habits as a line (never avoid habits)', () => {
+  const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'Lift', section: 'week' });
+  const guitar = habit({ type: 'weekly_count', count: 3 }, { name: 'Guitar', section: 'week', habit_kind: 'avoid' });
+  const sat = '2026-11-21';
+  const plan = planNotifications([lift, guitar], indexRecords([]), { today: sat }, { ...R, morningEnabled: false }, new Date(`${sat}T06:00:00`));
+  const ev = plan.find((p) => p.id === `evening-${sat}`)!;
+  assert.equal(ev.body, 'Lift: 0/2, 2 days left');
+  assert.match(ev.title, /^This week · 2 h until/);
+  assert.equal(paceText({ habit: lift, done: 0, target: 2, daysLeft: 1 }), 'Lift: 0/2, 1 day left');
 });

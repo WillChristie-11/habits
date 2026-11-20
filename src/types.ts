@@ -127,6 +127,18 @@ export interface ReminderSettings {
   snoozes: Snooze[];
   /** General motivational lines, used for any habit. */
   messages: string[];
+  checkins: CheckinSettings;
+}
+
+/** Random check-ins: a few nudges a day at unpredictable times, about something still open. */
+export interface CheckinSettings {
+  enabled: boolean;
+  /** per day */
+  count: number;
+  start: string; // 'HH:MM'
+  end: string; // 'HH:MM'
+  /** minimum minutes between two check-ins */
+  spacing: number;
 }
 
 export const DEFAULT_REMINDERS: ReminderSettings = {
@@ -137,4 +149,5 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   morningDismissedOn: null,
   snoozes: [],
   messages: [],
+  checkins: { enabled: true, count: 2, start: '09:00', end: '21:00', spacing: 90 },
 };
