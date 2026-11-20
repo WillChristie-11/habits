@@ -102,11 +102,17 @@ test('specific_days: only expected on chosen weekdays, hidden otherwise', () => 
   assert.equal(progress(h, idx, weekDays(TODAY), ctx).pct, 0.5);
 });
 
-test('weekly_count: x/N, target scaled down by rest days', () => {
+test('weekly_count: x/N; paused days lower the target, skipped days do not', () => {
   const h = habit({ type: 'weekly_count', count: 2 });
   const idx = indexRecords([rec(h, '2026-11-17')]);
   const p = progress(h, idx, weekDays(TODAY), ctx);
   assert.deepEqual([p.done, p.target], [1, 2]);
+  // 3 rest days: target stays 2
+  const skips = indexRecords(['2026-11-16', '2026-11-18', '2026-11-19'].map((d) => rec(h, d, 'skipped')));
+  assert.equal(progress(h, skips, weekDays(TODAY), ctx).target, 2);
+  // paused Mon–Fri (5 of 7 days): target 2 × 2/7 → 1
+  const lift = habit({ type: 'weekly_count', count: 2 }, { paused_from: '2026-11-16', paused_until: '2026-11-20' });
+  assert.equal(progress(lift, indexRecords([]), weekDays(TODAY), { today: '2026-11-22' }).target, 1);
   // no missed dots for weekly_count
   assert.ok(![...timeline(h, idx, '2026-11-13', TODAY, ctx).states.values()].includes('missed'));
 });

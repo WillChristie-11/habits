@@ -107,7 +107,8 @@ export interface Progress {
 }
 
 /**
- * Progress over a set of days. Skipped and paused days are excluded from the denominator.
+ * Progress over a set of days. Skipped and paused days are excluded from the denominator
+ * (for weekly_count habits, only paused days lower the target).
  * Today counts only once it's done (so mornings don't start at 0%).
  */
 export function progress(h: Habit, idx: RecordIndex, days: string[], ctx: Ctx): Progress {
@@ -115,17 +116,18 @@ export function progress(h: Habit, idx: RecordIndex, days: string[], ctx: Ctx): 
   const tl = timeline(h, idx, days[0], days[days.length - 1], ctx);
   let done = 0;
   let missed = 0;
-  let inactive = 0;
+  let paused = 0;
   for (const d of days) {
     const s = tl.states.get(d);
     if (s === 'done') done++;
     else if (s === 'missed') missed++;
-    else if (s === 'skipped' || s === 'paused') inactive++;
+    else if (s === 'paused') paused++;
   }
   if (h.frequency.type === 'weekly_count') {
     const count = Math.max(1, h.frequency.count ?? 1);
-    // Scale the target down for rest/paused days in the window.
-    const target = Math.ceil((count * (days.length - inactive)) / days.length);
+    // Paused days lower the target in proportion; rest (skipped) days don't, since a
+    // per-week habit already lets you choose which days to rest.
+    const target = Math.ceil((count * (days.length - paused)) / days.length);
     return { done, expected: target, target, pct: target > 0 ? Math.min(1, done / target) : null };
   }
   const expected = done + missed;
