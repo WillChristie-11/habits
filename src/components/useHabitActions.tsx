@@ -5,11 +5,9 @@ import { router } from 'expo-router';
 import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
-import { feelingContrast, wakeAnchor } from '../lib/insights';
+import { wakeAnchor } from '../lib/insights';
 import type { SwipeAction } from './SwipeRow';
-import { behindPace, sectionPassed } from '../lib/reminders';
 import { FeelingPicker } from './FeelingPicker';
-import { MotivationSheet } from './MotivationSheet';
 import { HabitForm } from '../screens/HabitForm';
 import { HabitDetail } from '../screens/HabitDetail';
 
@@ -27,7 +25,6 @@ export function useHabitActions(date?: string) {
   const isToday = day === ctx.today;
   const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind } | null>(null);
   const [detail, setDetail] = useState<Habit | null>(null);
-  const [motivation, setMotivation] = useState<Habit | null>(null);
 
   /** Open the full-screen session timer (starting it is what counts for avoid habits). */
   const startTimer = useCallback(
@@ -103,24 +100,11 @@ export function useHabitActions(date?: string) {
     }
   }, []);
 
-  const onOpen = useCallback(
-    (h: Habit) => {
-      if (h.kind === 'anchor') return setForm({ habit: h, kind: 'anchor' });
-      // Today, unchecked, and its part of the day has passed → show why / minimum first.
-      if (isToday && stateOn(h, idx, ctx.today, ctx) === 'pending') {
-        const behind = behindPace([h], idx, ctx).length > 0;
-        const has =
-          h.why ||
-          h.minimum_version ||
-          h.messages.length ||
-          settings.reminders.messages.length ||
-          feelingContrast(h, idx);
-        if (has && sectionPassed(h, habits, settings.reminders, new Date(), behind)) return setMotivation(h);
-      }
-      setDetail(h);
-    },
-    [isToday, idx, ctx, habits, settings.reminders],
-  );
+  /** Tapping a habit's name: its detail sheet (with Edit). Anchors go straight to their form. */
+  const onOpen = useCallback((h: Habit) => {
+    if (h.kind === 'anchor') return setForm({ habit: h, kind: 'anchor' });
+    setDetail(h);
+  }, []);
 
   const onDelete = useCallback((h: Habit) => removeHabit(h.id), [removeHabit]);
 
@@ -129,6 +113,7 @@ export function useHabitActions(date?: string) {
     (h: Habit): SwipeAction[] => {
       const skipped = stateOn(h, idx, day, ctx) === 'skipped';
       const out: SwipeAction[] = [
+        { label: 'Edit', onPress: () => setForm({ habit: h, kind: h.kind }) },
         {
           label: skipped ? 'Undo skip' : 'Skip',
           onPress: () => {
@@ -140,7 +125,6 @@ export function useHabitActions(date?: string) {
         },
       ];
       if (isToday) out.push({ label: 'Get ready', tone: 'accent', onPress: () => getReady(h) });
-      if (h.kind === 'anchor') out.push({ label: 'Edit', onPress: () => setForm({ habit: h, kind: 'anchor' }) });
       return out;
     },
     [idx, ctx, day, isToday, unmark, skip, getReady],
@@ -173,26 +157,6 @@ export function useHabitActions(date?: string) {
           onNote={(text) => setNote(afterPrompt.habitId, afterPrompt.date, text)}
         />
       )}
-      <MotivationSheet
-        habit={motivation}
-        onClose={() => setMotivation(null)}
-        onDone={(h) => {
-          setMotivation(null);
-          onToggle(h, 'pending');
-        }}
-        onStart={(h) => {
-          setMotivation(null);
-          setTimeout(() => startTimer(h), 250);
-        }}
-        onSkip={(h) => {
-          setMotivation(null);
-          skip(h);
-        }}
-        onDetails={(h) => {
-          setMotivation(null);
-          setTimeout(() => setDetail(h), 300);
-        }}
-      />
       <HabitForm
         visible={!!form}
         habit={form?.habit ?? null}
@@ -208,6 +172,14 @@ export function useHabitActions(date?: string) {
         onReady={(h) => {
           setDetail(null);
           setTimeout(() => getReady(h), 350);
+        }}
+        onDone={(h) => {
+          setDetail(null);
+          onToggle(h, 'pending');
+        }}
+        onSkip={(h) => {
+          setDetail(null);
+          skip(h);
         }}
         onClose={() => setDetail(null)}
         onEdit={(h) => {

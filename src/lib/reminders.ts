@@ -139,19 +139,6 @@ export function nudgeStart(r: ReminderSettings): string {
 
 const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes();
 
-/**
- * Has this habit's part of the day passed? Then tapping it shows its why / minimum version.
- * Timed: after its time. Under a morning anchor: after noon. Otherwise: once the evening nudge
- * starts. This week: when it's behind pace.
- */
-export function sectionPassed(h: Habit, habits: Habit[], r: ReminderSettings, now: Date, behind: boolean): boolean {
-  const n = minutesOf(now);
-  if (isWeekly(h)) return behind;
-  if (h.scheduled_time && onTimeline(h)) return n >= toMinutes(h.scheduled_time);
-  if (isMorning(h, habits)) return n >= toMinutes(MORNING_ENDS);
-  return n >= toMinutes(nudgeStart(r));
-}
-
 export type BannerState =
   | { kind: 'morning'; habits: Habit[]; avoid: Habit[] }
   | {

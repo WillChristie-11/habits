@@ -16,7 +16,6 @@ import {
   behindPace,
   pickMessage,
   planNotifications,
-  sectionPassed,
   MAX_SCHEDULED,
 } from './reminders';
 
@@ -193,19 +192,6 @@ test('banners: morning from its time until dismissed; evening turns late after t
     banners([wake, med], idx, ctx, R, at('20:30')).map((b) => b.kind),
     ['evening'],
   );
-});
-
-test('section passed: timed after its time, morning anchor after noon, anytime at nudge start', () => {
-  const wake = habit(daily, { kind: 'anchor', scheduled_time: '07:00' });
-  const t = habit(daily, { scheduled_time: '08:15' });
-  const m = habit(daily, { stack_after: wake.id });
-  const e = habit(daily);
-  const all = [wake, t, m, e];
-  assert.equal(sectionPassed(t, all, R, at('08:20'), false), true);
-  assert.equal(sectionPassed(m, all, R, at('11:59'), false), false);
-  assert.equal(sectionPassed(m, all, R, at('12:00'), false), true);
-  assert.equal(sectionPassed(e, all, R, at('19:59'), false), false);
-  assert.equal(sectionPassed(e, all, R, at('20:00'), false), true);
 });
 
 test('motivational messages rotate daily through why, own messages, then the general list', () => {

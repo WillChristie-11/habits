@@ -13,6 +13,7 @@ import { Banners } from '../components/Banners';
 import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { FloatingAdd } from '../components/FloatingAdd';
 import { WeekIntentionLine } from '../components/WeekIntention';
 import { LogRow } from '../components/LogRow';
 import { AnchorRow } from '../components/AnchorRow';
@@ -73,7 +74,6 @@ export function TodayScreen() {
             </Pressable>
           ) : null
         }
-        onAdd={isToday ? actions.openChooser : undefined}
         links={isToday ? [] : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]}
       />
 
@@ -190,6 +190,7 @@ export function TodayScreen() {
         )}
       </ScrollView>
 
+      {isToday && <FloatingAdd onPress={actions.openChooser} />}
       {actions.overlays}
     </View>
   );

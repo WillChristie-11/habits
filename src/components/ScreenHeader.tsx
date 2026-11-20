@@ -9,14 +9,12 @@ interface Props {
   title: string;
   /** Right side of the title row (e.g. the progress ring). */
   right?: React.ReactNode;
-  /** The one ＋ button (opens the Habit / Anchor / Activity chooser). */
-  onAdd?: () => void;
   /** Small text links under the title (e.g. "← Back to today"). */
   links?: { label: string; onPress: () => void; strong?: boolean }[];
 }
 
-/** Shared header for the tabs: date, ＋ and settings; big title; optional small links. */
-export function ScreenHeader({ dateLine, title, right, onAdd, links = [] }: Props) {
+/** Shared header for the tabs: date and settings; big title; optional small links. (＋ floats bottom-right.) */
+export function ScreenHeader({ dateLine, title, right, links = [] }: Props) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   return (
@@ -24,17 +22,6 @@ export function ScreenHeader({ dateLine, title, right, onAdd, links = [] }: Prop
       <View style={s.topRow}>
         <Text style={s.date}>{dateLine}</Text>
         <View style={{ flex: 1 }} />
-        {onAdd && (
-          <Pressable
-            onPress={onAdd}
-            hitSlop={10}
-            style={({ pressed }) => [s.addBtn, pressed && { opacity: 0.75 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Add a habit, anchor or activity"
-          >
-            <Text style={s.addText}>＋</Text>
-          </Pressable>
-        )}
         <Pressable
           onPress={() => router.push('/settings')}
           hitSlop={12}
@@ -76,16 +63,6 @@ const makeStyles = (t: Theme) =>
     titleRow: { flexDirection: 'row', alignItems: 'center' },
     title: { fontSize: 32, fontWeight: '700', color: t.text },
     actions: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6 },
-    addBtn: {
-      backgroundColor: t.accent,
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 8,
-    },
-    addText: { color: t.onAccent, fontWeight: '700', fontSize: 20, marginTop: -1 },
     link: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
     linkStrong: { color: t.accent, fontWeight: '700' },
   });

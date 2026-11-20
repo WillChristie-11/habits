@@ -8,7 +8,8 @@ import { Dot } from '../components/Dots';
 import { Button } from '../components/ui';
 import { useThemedStyles, type Theme } from '../theme';
 import { formatTime } from '../components/TimeField';
-import { ifThenLine, obstacleLine } from '../lib/reminders';
+import { ifThenLine, obstacleLine, pickMessage } from '../lib/reminders';
+import { feelingContrast } from '../lib/insights';
 
 interface Props {
   habit: Habit | null;
@@ -16,6 +17,9 @@ interface Props {
   onEdit(h: Habit): void;
   onStart(h: Habit): void;
   onReady(h: Habit): void;
+  /** Check it off (the motivation sheet's "Did the minimum ✓" lives here now). */
+  onDone(h: Habit): void;
+  onSkip(h: Habit): void;
 }
 
 const LEGEND: { state: DayState; label: string }[] = [
@@ -26,12 +30,22 @@ const LEGEND: { state: DayState; label: string }[] = [
   { state: 'none', label: 'Not due' },
 ];
 
-export function HabitDetail({ habit, onClose, onEdit, onStart, onReady }: Props) {
+export function HabitDetail({ habit, onClose, onEdit, onStart, onReady, onDone, onSkip }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={!!habit} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.screen}>
-        {habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} onReady={onReady} />}
+        {habit && (
+          <Body
+            habit={habit}
+            onClose={onClose}
+            onEdit={onEdit}
+            onStart={onStart}
+            onReady={onReady}
+            onDone={onDone}
+            onSkip={onSkip}
+          />
+        )}
       </View>
     </Modal>
   );
@@ -43,14 +57,18 @@ function Body({
   onEdit,
   onStart,
   onReady,
+  onDone,
+  onSkip,
 }: {
   habit: Habit;
   onClose(): void;
   onEdit(h: Habit): void;
   onStart(h: Habit): void;
   onReady(h: Habit): void;
+  onDone(h: Habit): void;
+  onSkip(h: Habit): void;
 }) {
-  const { habits, idx, ctx, mark, unmark } = useStore();
+  const { habits, idx, ctx, unmark, settings } = useStore();
   const styles = useThemedStyles(makeStyles);
   const h = habits.find((x) => x.id === h0.id) ?? h0;
   const days = last7(ctx.today);
@@ -59,15 +77,26 @@ function Body({
   const week = progress(h, idx, weekDays(ctx.today), ctx);
   const feel = feelingStats(h, idx);
   const anchor = h.stack_after != null ? habits.find((x) => x.id === h.stack_after) : null;
+  const pending = todayState === 'pending';
+  const contrast = feelingContrast(h, idx);
+  // A rotating line besides the why (which has its own card).
+  const message = pickMessage({ ...h, why: null }, ctx.today, settings.reminders.messages);
+  const avoid = h.habit_kind === 'avoid';
 
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.bar}>
-        <Pressable onPress={() => onEdit(h)} hitSlop={10}>
-          <Text style={styles.barBtn}>Edit</Text>
-        </Pressable>
-        <Pressable onPress={onClose} hitSlop={10}>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button">
           <Text style={[styles.barBtn, { fontWeight: '600' }]}>Done</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onEdit(h)}
+          hitSlop={8}
+          style={({ pressed }) => [styles.editBtn, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${h.name}`}
+        >
+          <Text style={styles.editText}>✎ Edit</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
@@ -76,6 +105,13 @@ function Body({
           {h.scheduled_time ? formatTime(h.scheduled_time) : anchor ? `After ${anchor.name}` : groupLabel(h, habits)} ·{' '}
           {frequencyText(h)}
         </Text>
+        {contrast && <Text style={styles.contrast}>{contrast}</Text>}
+        {pending && message && (
+          <View style={[styles.card, styles.forToday]}>
+            <Text style={styles.cardLabel}>For today</Text>
+            <Text style={styles.cardText}>{message}</Text>
+          </View>
+        )}
 
         {(h.why || h.minimum_version) && (
           <View style={styles.card}>
@@ -181,14 +217,23 @@ function Body({
         )}
 
         <View style={{ gap: 10, marginTop: 16 }}>
-          {todayState !== 'paused' && <Button title={`Start ${h.session_minutes} min`} onPress={() => onStart(h)} />}
+          {pending && !avoid && (
+            <Button title={h.minimum_version ? 'Did the minimum ✓' : 'Done ✓'} onPress={() => onDone(h)} />
+          )}
+          {todayState !== 'paused' && (
+            <Button
+              kind={pending && !avoid ? 'secondary' : 'primary'}
+              title={`Start ${h.session_minutes} min`}
+              onPress={() => onStart(h)}
+            />
+          )}
           {todayState !== 'paused' && todayState !== 'done' && (
             <Button kind="secondary" title={`Get ready (${h.ready_minutes} min)`} onPress={() => onReady(h)} />
           )}
           {todayState === 'skipped' ? (
             <Button kind="secondary" title="Undo skip" onPress={() => unmark(h.id)} />
           ) : todayState !== 'done' && todayState !== 'paused' ? (
-            <Button kind="secondary" title="Skip today (rest day)" onPress={() => mark(h.id, 'skipped')} />
+            <Button kind="secondary" title="Skip today (rest day)" onPress={() => onSkip(h)} />
           ) : null}
         </View>
       </ScrollView>
@@ -216,11 +261,16 @@ const makeStyles = (t: Theme) =>
     bar: {
       flexDirection: 'row',
       justifyContent: 'space-between',
+      alignItems: 'center',
       paddingHorizontal: 16,
       paddingTop: 16,
       paddingBottom: 8,
     },
     barBtn: { fontSize: 16, color: t.accent },
+    editBtn: { backgroundColor: t.accent, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 },
+    editText: { color: t.onAccent, fontWeight: '700', fontSize: 15 },
+    contrast: { fontSize: 14, color: t.accent, fontWeight: '600', marginTop: 8, lineHeight: 19 },
+    forToday: { backgroundColor: t.rowHighlight },
     content: { padding: 16, paddingBottom: 60 },
     name: { fontSize: 26, fontWeight: '700', color: t.text },
     sub: { fontSize: 14, color: t.textMuted, marginTop: 4 },

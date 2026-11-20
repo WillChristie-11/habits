@@ -7,6 +7,7 @@ import { counts, layoutDay, visibleToday } from '../lib/schedule';
 import { TimelineBlock } from '../components/TimelineBlock';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { FloatingAdd } from '../components/FloatingAdd';
 import { useThemedStyles, type Theme } from '../theme';
 
 /** Today's plan: anchors and timed habits at their times, flexible habits in their windows. */
@@ -31,7 +32,7 @@ export function ScheduleScreen() {
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader dateLine={dateLine} title="Schedule" onAdd={actions.openChooser} />
+      <ScreenHeader dateLine={dateLine} title="Schedule" />
 
       <ScrollView
         scrollEnabled={scrollEnabled}
@@ -61,6 +62,7 @@ export function ScheduleScreen() {
         )}
       </ScrollView>
 
+      <FloatingAdd onPress={actions.openChooser} />
       {actions.overlays}
     </View>
   );
