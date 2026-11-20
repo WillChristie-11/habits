@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   InputAccessoryView,
   Keyboard,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +13,7 @@ import {
   type TextInputInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureDetector, ScrollView, usePanGesture } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
 import Svg, { Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
@@ -24,8 +25,56 @@ import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const SAVE_DEBOUNCE_MS = 400;
 const DONE_BAR = 'journal-done';
-/** Journal text only; the rest of the app keeps the system font. */
-export const JOURNAL_FONT = 'Lora_400Regular';
+/** How far a horizontal swipe must travel to change the day or week. */
+const SWIPE_PX = 60;
+
+function useKeyboardUp() {
+  const [up, setUp] = useState(false);
+  useEffect(() => {
+    const a = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setUp(true));
+    const b = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setUp(false));
+    return () => {
+      a.remove();
+      b.remove();
+    };
+  }, []);
+  return up;
+}
+
+/**
+ * Horizontal swipe → onSwipe(-1) for right (earlier), onSwipe(1) for left (later). The content
+ * follows the finger a little; vertical scrolling is untouched.
+ */
+function SwipeArea({
+  enabled,
+  onSwipe,
+  style,
+  children,
+}: {
+  enabled: boolean;
+  onSwipe(dir: -1 | 1): void;
+  style?: React.ComponentProps<typeof Animated.View>['style'];
+  children: React.ReactNode;
+}) {
+  const [tx] = useState(() => new Animated.Value(0));
+  const pan = usePanGesture({
+    enabled,
+    runOnJS: true,
+    activeOffsetX: [-18, 18],
+    failOffsetY: [-14, 14],
+    onUpdate: (e) => tx.setValue(e.translationX * 0.35),
+    onDeactivate: (e) => {
+      if (e.translationX > SWIPE_PX) onSwipe(-1);
+      else if (e.translationX < -SWIPE_PX) onSwipe(1);
+    },
+    onFinalize: () => Animated.spring(tx, { toValue: 0, useNativeDriver: true, friction: 8 }).start(),
+  });
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={[style, { transform: [{ translateX: tx }] }]}>{children}</Animated.View>
+    </GestureDetector>
+  );
+}
 
 /**
  * One free-form page per day. Opens on today's page without the keyboard; tap the text to write.
@@ -40,6 +89,15 @@ export function JournalScreen() {
   const date = picked && picked < ctx.today ? picked : ctx.today; // follows midnight
   const isToday = date === ctx.today;
   const editor = useRef<TextInputInstance>(null);
+  const keyboardUp = useKeyboardUp();
+
+  /** One day at a time, empty days included; never past today. */
+  const moveDay = (dir: -1 | 1) => {
+    const next = addDays(date, dir);
+    if (next > ctx.today) return;
+    Haptics.selectionAsync().catch(() => {});
+    setPicked(next === ctx.today ? null : next);
+  };
 
   // Opening the tab: back to today, keyboard down.
   useFocusEffect(
@@ -60,25 +118,28 @@ export function JournalScreen() {
         onSelect={(d) => setPicked(d === ctx.today ? null : d)}
       />
 
-      <ScrollView
-        contentContainerStyle={s.scroll}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={s.date}>
-          {fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
-        </Text>
-        {weekday(date) === 0 && <SundayRecap sunday={date} />}
-        {isToday ? (
-          <TodayPage key={date} date={date} inputRef={editor} />
-        ) : pages[date] ? (
-          <Text style={s.pageText} selectable>
-            {pages[date]}
+      {/* Swipe the page for the previous / next day (on today's page only with the keyboard down). */}
+      <SwipeArea enabled={!(isToday && keyboardUp)} onSwipe={moveDay} style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={s.date}>
+            {fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
           </Text>
-        ) : (
-          <Text style={s.nothing}>Nothing written this day.</Text>
-        )}
-      </ScrollView>
+          {weekday(date) === 0 && <SundayRecap sunday={date} />}
+          {isToday ? (
+            <TodayPage key={date} date={date} inputRef={editor} />
+          ) : pages[date] ? (
+            <Text style={s.pageText} selectable>
+              {pages[date]}
+            </Text>
+          ) : (
+            <Text style={s.nothing}>Nothing written this day.</Text>
+          )}
+        </ScrollView>
+      </SwipeArea>
 
       {Platform.OS === 'ios' && (
         <InputAccessoryView nativeID={DONE_BAR}>
@@ -93,7 +154,7 @@ export function JournalScreen() {
   );
 }
 
-/** Today's page: plain text in Lora, saved as you type. Grows with the text; the screen scrolls. */
+/** Today's page: plain text in the system font (light), saved as you type. Grows with the text. */
 function TodayPage({ date, inputRef }: { date: string; inputRef: React.RefObject<TextInputInstance | null> }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
@@ -143,7 +204,7 @@ function TodayPage({ date, inputRef }: { date: string; inputRef: React.RefObject
   );
 }
 
-/** Mon–Sun with ‹ › for other weeks, like Today. A dot marks days with writing. */
+/** Mon–Sun; swipe it or use ‹ › for other weeks, like Today. A dot marks days with writing. */
 function WeekStrip({
   selected,
   today,
@@ -173,7 +234,7 @@ function WeekStrip({
       ? `${m(fa)} ${fa.getDate()} – ${fb.getDate()}`
       : `${m(fa)} ${fa.getDate()} – ${m(fb)} ${fb.getDate()}`;
   return (
-    <View style={s.strip}>
+    <SwipeArea enabled onSwipe={shift} style={s.strip}>
       <View style={s.stripHead}>
         <Pressable onPress={() => shift(-1)} hitSlop={12} accessibilityLabel="Previous week">
           <Text style={s.chev}>‹</Text>
@@ -204,7 +265,7 @@ function WeekStrip({
           );
         })}
       </View>
-    </View>
+    </SwipeArea>
   );
 }
 
@@ -333,18 +394,18 @@ const makeStyles = (t: Theme) =>
       paddingHorizontal: 20,
       paddingTop: 12,
       paddingBottom: 24,
-      fontFamily: JOURNAL_FONT,
       fontSize: 19,
       lineHeight: 29,
-      color: t.text,
+      fontWeight: '300',
+      color: t.journalText,
     },
     pageText: {
       paddingHorizontal: 20,
       paddingTop: 12,
-      fontFamily: JOURNAL_FONT,
       fontSize: 19,
       lineHeight: 29,
-      color: t.text,
+      fontWeight: '300',
+      color: t.journalText,
     },
     nothing: { paddingHorizontal: 20, paddingTop: 16, fontSize: 15, color: t.textMuted },
     doneBar: {

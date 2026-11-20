@@ -165,7 +165,7 @@ export const makeStyles = (t: Theme) =>
       marginBottom: 6,
       minHeight: 56,
     },
-    rowNext: { backgroundColor: t.accentSoft },
+    rowNext: { backgroundColor: t.rowHighlight },
     rowCompact: { minHeight: 46, paddingVertical: 8, borderRadius: 10, marginBottom: 5 },
     rowRisk: { borderLeftWidth: 3, borderLeftColor: status.flag },
     stackLine: {

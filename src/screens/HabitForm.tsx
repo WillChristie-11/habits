@@ -11,7 +11,8 @@ import { suggestPlanWhen } from '../lib/reminders';
 import { MessageList } from '../components/MessageList';
 import { READY_OPTIONS } from '../lib/defaults';
 import { StepList } from '../components/StepList';
-import { useThemedStyles, type Theme } from '../theme';
+import { tileColors, useTheme, useThemedStyles, type Theme } from '../theme';
+import { ACTIVITY_ICONS, ActivityIcon, activityLook, type ActivityIconName } from '../components/ActivityIcon';
 
 interface Props {
   visible: boolean;
@@ -47,6 +48,7 @@ export function HabitForm({ visible, habit, defaultKind = 'habit', onClose }: Pr
 function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaultKind: ItemKind; onClose(): void }) {
   const s = useThemedStyles(makeStyles);
   const { habits, addHabit, editHabit } = useStore();
+  const theme = useTheme();
 
   const [kind, setKind] = useState<ItemKind>(habit?.kind ?? defaultKind);
   const [name, setName] = useState(habit?.name ?? '');
@@ -90,6 +92,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [checkMin, setCheckMin] = useState(habit?.check_minutes ?? 45);
   const [locked, setLocked] = useState(habit?.locked ?? false);
   const [more, setMore] = useState(false);
+  const look = habit
+    ? activityLook(habit)
+    : { color: tileColors[0] as string, icon: ACTIVITY_ICONS[0] as ActivityIconName };
+  const [tileColor, setTileColor] = useState<string>(look.color);
+  const [tileIcon, setTileIcon] = useState<ActivityIconName>(look.icon);
 
   async function toggleReminder(on: boolean) {
     setReminder(on);
@@ -194,7 +201,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
       end_time: isAnchor && hasEnd ? endTime : null,
       reminder: scheduled && reminder,
       remind_before: remindBefore,
-      meta: habit?.meta ?? null,
+      meta: isActivity ? { ...(habit?.meta ?? {}), color: tileColor, icon: tileIcon } : (habit?.meta ?? null),
     };
     if (habit) await editHabit(habit.id, input);
     else await addHabit(input);
@@ -316,6 +323,39 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
 
         {isActivity && (
           <>
+            <Label>Colour and icon</Label>
+            <View style={s.swatches}>
+              {tileColors.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => setTileColor(c)}
+                  style={[s.swatch, { backgroundColor: c }, tileColor === c && s.swatchOn]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: tileColor === c }}
+                  accessibilityLabel={`Colour ${c}`}
+                />
+              ))}
+            </View>
+            <View style={s.icons}>
+              {ACTIVITY_ICONS.map((ic) => (
+                <Pressable
+                  key={ic}
+                  onPress={() => setTileIcon(ic)}
+                  style={[s.iconPick, tileIcon === ic && s.iconPickOn]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: tileIcon === ic }}
+                  accessibilityLabel={ic}
+                >
+                  <ActivityIcon
+                    color={tileIcon === ic ? tileColor : theme.dotEmpty}
+                    icon={ic}
+                    size={40}
+                    label={name || '•'}
+                  />
+                </Pressable>
+              ))}
+            </View>
+
             <Label>Unit</Label>
             <Segmented<ActivityUnit | 'none'>
               value={unit}
@@ -671,6 +711,12 @@ const makeStyles = (t: Theme) =>
     },
     moreText: { fontSize: 16, fontWeight: '600', color: t.text },
     moreMeta: { fontSize: 14, color: t.textMuted },
+    swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    swatch: { width: 34, height: 34, borderRadius: 17, borderWidth: 3, borderColor: t.background },
+    swatchOn: { borderColor: t.text },
+    icons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+    iconPick: { padding: 3, borderRadius: 14, borderWidth: 2, borderColor: 'transparent' },
+    iconPickOn: { borderColor: t.text },
     targetRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' },
     targetTo: { fontSize: 15, color: t.textMuted },
   });

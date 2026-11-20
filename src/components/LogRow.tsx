@@ -4,31 +4,41 @@ import {
   Alert,
   Animated,
   Easing,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import type { Habit } from '../types';
+import type { DayState, Habit } from '../types';
 import { FEELINGS } from '../types';
 import { useStore } from '../store';
-import { addDays, fromKey } from '../lib/dates';
+import { addDays, fromKey, last7, weekDays } from '../lib/dates';
+import { weeklyGoal } from '../lib/journal';
+import { DotRow } from './Dots';
+import { ActivityIcon, activityLook } from './ActivityIcon';
+import { SwipeRow } from './SwipeRow';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
 const AUTO_DISMISS_MS = 7000;
+const UNDO_MS = 5000;
 const unitLabel = (u: Habit['unit']) => (u === 'mi' ? 'mi' : u === 'min' ? 'min' : '');
+const dayName = (d: string, today: string) =>
+  d === today
+    ? 'Today'
+    : d === addDays(today, -1)
+      ? 'Yesterday'
+      : fromKey(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 
 /**
- * "＋ Log" at the bottom of Today: opens a list of activities (+ "New…"). One tap logs it for today
- * with a light haptic, then offers an optional amount + feeling sheet. Long-press an activity to log
- * an earlier day, or to edit or delete it. Today's logs show as chips beside the button.
- * Activities are never expected, missed or counted.
+ * "＋ Log" at the bottom of Today. Opens a sheet of activity tiles; activities are never expected,
+ * missed or counted.
  */
 export function LogRow({
   onEdit,
@@ -43,155 +53,305 @@ export function LogRow({
   trailing?: React.ReactNode;
 }) {
   const s = useThemedStyles(makeStyles);
-  const insets = useSafeAreaInsets();
-  const { habits, idx, ctx, logActivity } = useStore();
-  const activities = habits.filter((h) => h.kind === 'activity').sort((a, b) => a.order - b.order || a.id - b.id);
   const [open, setOpen] = useState(false);
-  const [sheet, setSheet] = useState<{ habit: Habit; date: string } | null>(null);
-
-  const logged = (h: Habit) => idx.get(h.id)?.get(ctx.today)?.status === 'done';
-  const log = async (h: Habit, date: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    await logActivity(h, date);
-    setSheet({ habit: h, date });
-  };
-  const pick = (h: Habit) => {
+  // Something to do after the sheet has closed (opening the form).
+  const after = useRef<(() => void) | null>(null);
+  const closeThen = (fn: () => void) => {
+    after.current = fn;
     setOpen(false);
-    if (logged(h)) setSheet({ habit: h, date: ctx.today });
-    else log(h, ctx.today);
   };
-
-  const more = (h: Habit) => {
-    const days = Array.from({ length: 7 }, (_, i) => addDays(ctx.today, -i));
-    const label = (d: string, i: number) =>
-      i === 0
-        ? 'Today'
-        : i === 1
-          ? 'Yesterday'
-          : fromKey(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-    const confirmDelete = () =>
-      Alert.alert(`Delete ${h.name}?`, 'Its history will be removed.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => onDelete(h) },
-      ]);
-    if (Platform.OS !== 'ios') return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const options = [...days.map(label), 'Edit activity', 'Delete activity', 'Cancel'];
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: `Log ${h.name} for…`,
-        options,
-        destructiveButtonIndex: days.length + 1,
-        cancelButtonIndex: options.length - 1,
-      },
-      (i) => {
-        if (i === options.length - 1) return;
-        setOpen(false);
-        if (i < days.length) log(h, days[i]);
-        else if (i === days.length) setTimeout(() => onEdit(h), 300);
-        else confirmDelete();
-      },
-    );
-  };
-
-  const todays = activities.filter(logged);
-
   return (
     <View style={s.wrap}>
-      <View style={s.buttons}>
+      <View style={s.row}>
         <Pressable
-          onPress={() => (activities.length ? setOpen(true) : onNew())}
+          onPress={() => setOpen(true)}
           style={({ pressed }) => [s.btn, pressed && { opacity: 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Log an activity"
         >
           <Text style={s.btnText}>＋ Log</Text>
         </Pressable>
-        {todays.map((h) => {
-          const amount = Number(idx.get(h.id)?.get(ctx.today)?.meta?.amount) || 0;
-          return (
-            <Pressable
-              key={h.id}
-              onPress={() => setSheet({ habit: h, date: ctx.today })}
-              style={({ pressed }) => [s.btn, s.btnLogged, pressed && { opacity: 0.7 }]}
-              accessibilityRole="button"
-              accessibilityLabel={`${h.name}, logged today`}
-            >
-              <Text style={[s.btnText, s.btnTextLogged]}>
-                ✓ {h.name}
-                {amount ? ` · ${amount} ${unitLabel(h.unit)}` : ''}
-              </Text>
-            </Pressable>
-          );
-        })}
         {trailing && <View style={{ marginLeft: 'auto' }}>{trailing}</View>}
       </View>
-
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-        <Pressable style={s.scrim} onPress={() => setOpen(false)} accessibilityLabel="Close" />
-        <View style={[s.list, { paddingBottom: insets.bottom + 12 }]}>
-          <Text style={s.listTitle}>Log</Text>
-          <ScrollView style={{ maxHeight: 360 }}>
-            {activities.map((h) => (
-              <Pressable
-                key={h.id}
-                onPress={() => pick(h)}
-                onLongPress={() => more(h)}
-                delayLongPress={350}
-                style={({ pressed }) => [s.item, pressed && { opacity: 0.6 }]}
-                accessibilityRole="button"
-                accessibilityHint="Long-press to log an earlier day, edit or delete"
-              >
-                <Text style={s.itemText}>{h.name}</Text>
-                <Text style={s.itemMeta}>{logged(h) ? '✓ today' : ''}</Text>
-              </Pressable>
-            ))}
-            <Pressable
-              onPress={() => {
-                setOpen(false);
-                setTimeout(onNew, 300);
-              }}
-              style={({ pressed }) => [s.item, pressed && { opacity: 0.6 }]}
-              accessibilityRole="button"
-            >
-              <Text style={[s.itemText, s.newText]}>New…</Text>
-            </Pressable>
-          </ScrollView>
-          <Text style={s.listHint}>Tap to log today · long-press for an earlier day, edit or delete</Text>
-        </View>
+      <Modal
+        visible={open}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setOpen(false)}
+        onDismiss={() => {
+          after.current?.();
+          after.current = null;
+        }}
+      >
+        {open && (
+          <LogSheetBody
+            onClose={() => setOpen(false)}
+            onEdit={(h) => closeThen(() => onEdit(h))}
+            onNew={() => closeThen(onNew)}
+            onDelete={onDelete}
+          />
+        )}
       </Modal>
-
-      {sheet && (
-        <LogSheet
-          key={`${sheet.habit.id}-${sheet.date}`}
-          habit={sheet.habit}
-          date={sheet.date}
-          onClose={() => setSheet(null)}
-        />
-      )}
     </View>
   );
 }
 
-/** Optional amount + feeling after logging; hides itself like the feeling card unless touched. */
-function LogSheet({ habit, date, onClose }: { habit: Habit; date: string; onClose(): void }) {
+/**
+ * Tiles (colour + SF Symbol, last 7 days, x/goal) and "＋ New". Tap = log now, with a 5 s Undo
+ * bar and the amount/feeling panel once. Long-press: Edit · Log for another day · Delete.
+ * Below: the last 7 days of logs; swipe one left to delete it.
+ */
+function LogSheetBody({
+  onClose,
+  onEdit,
+  onNew,
+  onDelete,
+}: {
+  onClose(): void;
+  onEdit(h: Habit): void;
+  onNew(): void;
+  onDelete(h: Habit): void;
+}) {
+  const s = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  const { habits, idx, ctx, logActivity, unmark } = useStore();
+  const activities = habits.filter((h) => h.kind === 'activity').sort((a, b) => a.order - b.order || a.id - b.id);
+  const [panel, setPanel] = useState<{ habit: Habit; date: string; n: number } | null>(null);
+  const [bar, setBar] = useState<{ habit: Habit; date: string; text: string; n: number } | null>(null);
+  const seq = useRef(0);
+
+  useEffect(() => {
+    if (!bar) return;
+    const t = setTimeout(() => setBar((b) => (b?.n === bar.n ? null : b)), UNDO_MS);
+    return () => clearTimeout(t);
+  }, [bar]);
+
+  const logged = (h: Habit, d: string) => idx.get(h.id)?.get(d)?.status === 'done';
+
+  const log = async (h: Habit, date: string) => {
+    const n = ++seq.current;
+    if (logged(h, date)) {
+      // One log per activity per day: say so, and don't reopen the panel.
+      Haptics.selectionAsync().catch(() => {});
+      setBar({
+        habit: h,
+        date,
+        n,
+        text: `${h.name} is already logged ${date === ctx.today ? 'today' : dayName(date, ctx.today)}`,
+      });
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    await logActivity(h, date);
+    setBar({
+      habit: h,
+      date,
+      n,
+      text: `Logged ${h.name}${date === ctx.today ? '' : ` · ${dayName(date, ctx.today)}`}`,
+    });
+    setPanel({ habit: h, date, n }); // once, right after logging
+  };
+
+  const undo = async () => {
+    if (!bar) return;
+    await unmark(bar.habit.id, bar.date);
+    if (panel?.habit.id === bar.habit.id && panel.date === bar.date) setPanel(null);
+    setBar(null);
+  };
+
+  const confirmDelete = (h: Habit) =>
+    Alert.alert(`Delete ${h.name}?`, 'Its history will be removed.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => onDelete(h) },
+    ]);
+
+  const anotherDay = (h: Habit) => {
+    const days = Array.from({ length: 6 }, (_, i) => addDays(ctx.today, -(i + 1)));
+    const options = [...days.map((d) => dayName(d, ctx.today)), 'Cancel'];
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: `Log ${h.name} for…`, options, cancelButtonIndex: options.length - 1 },
+      (i) => i < days.length && log(h, days[i]),
+    );
+  };
+
+  const menu = (h: Habit) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    if (Platform.OS !== 'ios') {
+      Alert.alert(h.name, undefined, [
+        { text: 'Edit', onPress: () => onEdit(h) },
+        { text: 'Delete', style: 'destructive', onPress: () => confirmDelete(h) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      return;
+    }
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: h.name,
+        options: ['Edit', 'Log for another day', 'Delete', 'Cancel'],
+        destructiveButtonIndex: 2,
+        cancelButtonIndex: 3,
+      },
+      (i) => {
+        if (i === 0) onEdit(h);
+        else if (i === 1) setTimeout(() => anotherDay(h), 350);
+        else if (i === 2) confirmDelete(h);
+      },
+    );
+  };
+
+  const history = last7(ctx.today)
+    .slice()
+    .reverse()
+    .map((d) => ({ date: d, items: activities.filter((h) => logged(h, d)) }))
+    .filter((g) => g.items.length);
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.sheetScreen}>
+        <View style={s.bar}>
+          <Text style={s.barTitle}>Log</Text>
+          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button">
+            <Text style={s.barDone}>Done</Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 90 }]}
+          keyboardShouldPersistTaps="handled"
+        >
+          {panel && (
+            <AmountFeeling key={panel.n} habit={panel.habit} date={panel.date} onClose={() => setPanel(null)} />
+          )}
+
+          <View style={s.grid}>
+            {activities.map((h) => (
+              <Tile key={h.id} habit={h} onPress={() => log(h, ctx.today)} onLongPress={() => menu(h)} />
+            ))}
+            <Pressable
+              onPress={onNew}
+              style={({ pressed }) => [s.tile, pressed && { opacity: 0.6 }]}
+              accessibilityRole="button"
+            >
+              <View style={s.newBox}>
+                <Text style={s.newPlus}>＋</Text>
+              </View>
+              <Text style={s.tileName}>New</Text>
+            </Pressable>
+          </View>
+          {activities.length > 0 && <Text style={s.hint}>Tap to log now · hold for Edit, another day or Delete</Text>}
+
+          {history.length > 0 && (
+            <View style={{ marginTop: 22 }}>
+              <Text style={s.section}>Last 7 days</Text>
+              {history.map((g) => (
+                <View key={g.date} style={{ marginTop: 10 }}>
+                  <Text style={s.day}>{dayName(g.date, ctx.today)}</Text>
+                  {g.items.map((h) => {
+                    const rec = idx.get(h.id)?.get(g.date);
+                    const amount = Number(rec?.meta?.amount) || 0;
+                    const look = activityLook(h);
+                    return (
+                      <SwipeRow
+                        key={h.id}
+                        name={h.name}
+                        actions={[]}
+                        gap={6}
+                        radius={12}
+                        confirmTitle={`Delete this ${h.name} log?`}
+                        confirmMessage={`${dayName(g.date, ctx.today)}'s ${h.name} will be removed.`}
+                        onDelete={() => unmark(h.id, g.date)}
+                      >
+                        <View style={s.entry}>
+                          <ActivityIcon color={look.color} icon={look.icon} size={30} label={h.name} />
+                          <Text style={s.entryName}>{h.name}</Text>
+                          <Text style={s.entryMeta}>
+                            {[
+                              amount ? `${amount} ${unitLabel(h.unit)}` : '',
+                              rec?.feeling ? FEELINGS[rec.feeling - 1] : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </Text>
+                        </View>
+                      </SwipeRow>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+
+        {bar && (
+          <View style={[s.undoBar, { bottom: insets.bottom + 16 }]}>
+            <Text style={s.undoText} numberOfLines={1}>
+              {bar.text}
+            </Text>
+            <Pressable onPress={undo} hitSlop={10} accessibilityRole="button">
+              <Text style={s.undoBtn}>Undo</Text>
+            </Pressable>
+          </View>
+        )}
+      </KeyboardAvoidingView>
+    </GestureHandlerRootView>
+  );
+}
+
+/** One activity: colour + SF Symbol, name, the last 7 days as dots, and x/goal this week. */
+function Tile({ habit, onPress, onLongPress }: { habit: Habit; onPress(): void; onLongPress(): void }) {
+  const s = useThemedStyles(makeStyles);
+  const { idx, ctx } = useStore();
+  const look = activityLook(habit);
+  const done = (d: string) => idx.get(habit.id)?.get(d)?.status === 'done';
+  const states: DayState[] = last7(ctx.today).map((d) => (done(d) ? 'done' : 'none'));
+  const goal = weeklyGoal(habit);
+  const thisWeek = weekDays(ctx.today).filter((d) => d <= ctx.today && done(d)).length;
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      style={({ pressed }) => [s.tile, pressed && { transform: [{ scale: 0.96 }] }]}
+      accessibilityRole="button"
+      accessibilityLabel={`Log ${habit.name}`}
+      accessibilityHint="Hold for Edit, Log for another day or Delete"
+    >
+      <ActivityIcon color={look.color} icon={look.icon} label={habit.name} />
+      <Text style={s.tileName} numberOfLines={1}>
+        {habit.name}
+      </Text>
+      <DotRow states={states} size={8} />
+      {goal != null && (
+        <Text style={s.goal}>
+          {thisWeek}/{goal}
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
+/** Optional amount + feeling, shown once right after logging; hides itself unless touched. */
+function AmountFeeling({ habit, date, onClose }: { habit: Habit; date: string; onClose(): void }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const { idx, ctx, settings, setActivityAmount, rateFeeling, unmark } = useStore();
+  const { idx, settings, setActivityAmount, rateFeeling } = useStore();
   const rec = idx.get(habit.id)?.get(date);
   const [amount, setAmount] = useState(rec?.meta?.amount != null ? String(rec.meta.amount) : '');
   const [feeling, setFeeling] = useState<number | null>(rec?.feeling ?? null);
   const [touched, setTouched] = useState(false);
   const [timer] = useState(() => new Animated.Value(1));
   const saved = useRef(false);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
 
   const save = async () => {
     if (saved.current) return;
     saved.current = true;
     const n = parseFloat(amount.replace(',', '.'));
-    await setActivityAmount(habit, date, Number.isFinite(n) && n > 0 ? n : null);
+    if (habit.unit) await setActivityAmount(habit, date, Number.isFinite(n) && n > 0 ? n : null);
     if (feeling != null) await rateFeeling(habit.id, feeling, date);
-    onClose();
+    closeRef.current();
   };
 
   useEffect(() => {
@@ -205,28 +365,13 @@ function LogSheet({ habit, date, onClose }: { habit: Habit; date: string; onClos
       easing: Easing.linear,
       useNativeDriver: false,
     });
-    anim.start(({ finished }) => finished && onClose());
+    anim.start(({ finished }) => finished && closeRef.current());
     return () => anim.stop();
-  }, [settings.feelingAutoDismiss, touched, timer, onClose]);
-
-  const dayText = date === ctx.today ? 'today' : fromKey(date).toLocaleDateString(undefined, { weekday: 'long' });
+  }, [settings.feelingAutoDismiss, touched, timer]);
 
   return (
-    <View style={s.sheet}>
-      <View style={s.sheetHead}>
-        <Text style={s.sheetTitle}>
-          {habit.name} logged {dayText}
-        </Text>
-        <Pressable
-          onPress={async () => {
-            await unmark(habit.id, date);
-            onClose();
-          }}
-          hitSlop={10}
-        >
-          <Text style={s.undo}>Undo</Text>
-        </Pressable>
-      </View>
+    <View style={s.panel}>
+      <Text style={s.panelTitle}>How was {habit.name.toLowerCase()}?</Text>
       {habit.unit && (
         <View style={s.amountRow}>
           <TextInput
@@ -267,7 +412,7 @@ function LogSheet({ habit, date, onClose }: { habit: Habit; date: string; onClos
       </Pressable>
       {settings.feelingAutoDismiss && !touched && (
         <Animated.View
-          style={[s.bar, { width: timer.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]}
+          style={[s.timerBar, { width: timer.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]}
         />
       )}
     </View>
@@ -277,38 +422,74 @@ function LogSheet({ habit, date, onClose }: { habit: Habit; date: string; onClos
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     wrap: { marginTop: 26 },
-    scrim: { flex: 1, backgroundColor: t.scrim },
-    list: {
-      backgroundColor: t.background,
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      paddingTop: 16,
-      paddingHorizontal: 16,
-    },
-    listTitle: { fontSize: 20, fontWeight: '700', color: t.text, marginBottom: 8, marginLeft: 4 },
-    item: {
+    row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    btn: { borderRadius: 20, borderWidth: 1.5, borderColor: t.accent, paddingHorizontal: 16, paddingVertical: 8 },
+    btnText: { fontSize: 15, fontWeight: '600', color: t.accent },
+    sheetScreen: { flex: 1, backgroundColor: t.background },
+    bar: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingVertical: 14,
-      paddingHorizontal: 14,
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 8,
+    },
+    barTitle: { fontSize: 24, fontWeight: '700', color: t.text },
+    barDone: { fontSize: 16, fontWeight: '600', color: t.accent },
+    content: { paddingHorizontal: 16 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+    tile: { width: '33.33%', alignItems: 'center', paddingVertical: 10, gap: 5 },
+    tileName: { fontSize: 14, fontWeight: '600', color: t.text, maxWidth: '90%' },
+    goal: { fontSize: 12, color: t.textMuted, fontVariant: ['tabular-nums'] },
+    newBox: {
+      width: 56,
+      height: 56,
+      borderRadius: 16,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderColor: t.dotEmpty,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    newPlus: { fontSize: 24, color: t.textMuted },
+    hint: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginTop: 4 },
+    section: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: t.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+      marginLeft: 4,
+    },
+    day: { fontSize: 14, fontWeight: '700', color: t.text, marginBottom: 6, marginLeft: 4 },
+    entry: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
       backgroundColor: t.surface,
       borderRadius: 12,
+      paddingVertical: 9,
+      paddingHorizontal: 12,
       marginBottom: 6,
     },
-    itemText: { fontSize: 17, fontWeight: '600', color: t.text },
-    itemMeta: { fontSize: 13, color: t.accent, fontWeight: '600' },
-    newText: { color: t.accent },
-    listHint: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginTop: 8 },
-    buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    btn: { borderRadius: 20, borderWidth: 1.5, borderColor: t.accent, paddingHorizontal: 14, paddingVertical: 8 },
-    btnLogged: { backgroundColor: t.accent },
-    btnText: { fontSize: 15, fontWeight: '600', color: t.accent },
-    btnTextLogged: { color: t.onAccent },
-    sheet: { backgroundColor: t.surface, borderRadius: 16, padding: 14, marginTop: 12, gap: 10, overflow: 'hidden' },
-    sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    sheetTitle: { fontSize: 15, fontWeight: '600', color: t.text },
-    undo: { fontSize: 14, color: t.textMuted },
+    entryName: { fontSize: 16, fontWeight: '600', color: t.text, flex: 1 },
+    entryMeta: { fontSize: 13, color: t.textMuted },
+    undoBar: {
+      position: 'absolute',
+      left: 16,
+      right: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: t.text,
+      borderRadius: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    undoText: { flex: 1, color: t.background, fontSize: 15, fontWeight: '600' },
+    undoBtn: { color: t.background, fontSize: 15, fontWeight: '800' },
+    panel: { backgroundColor: t.surface, borderRadius: 16, padding: 14, marginTop: 6, gap: 10, overflow: 'hidden' },
+    panelTitle: { fontSize: 15, fontWeight: '600', color: t.text },
     amountRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     amount: {
       backgroundColor: t.background,
@@ -336,5 +517,5 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.accent,
     },
     saveText: { color: t.onAccent, fontWeight: '700' },
-    bar: { position: 'absolute', left: 0, bottom: 0, height: 3, backgroundColor: t.accent },
+    timerBar: { position: 'absolute', left: 0, bottom: 0, height: 3, backgroundColor: t.accent },
   });
