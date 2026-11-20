@@ -58,9 +58,32 @@ export function useHabitActions(date?: string) {
 
   const openForm = useCallback((habit: Habit | null, kind: ItemKind = 'habit') => setForm({ habit, kind }), []);
 
+  /** The "Get ready" transition countdown before an item. */
+  const getReady = useCallback(
+    (h: Habit) => {
+      Haptics.selectionAsync().catch(() => {});
+      router.push({ pathname: '/ready', params: { habitId: String(h.id), date: day } });
+    },
+    [day],
+  );
+
   const onOpen = useCallback(
     (h: Habit) => {
-      if (h.kind === 'anchor') return setForm({ habit: h, kind: 'anchor' });
+      if (h.kind === 'anchor') {
+        // Long-press on an activity: get ready for it, or edit it.
+        if (Platform.OS === 'ios' && isToday) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          ActionSheetIOS.showActionSheetWithOptions(
+            { title: h.name, options: [`Get ready (${h.ready_minutes} min)`, 'Edit', 'Cancel'], cancelButtonIndex: 2 },
+            (i) => {
+              if (i === 0) getReady(h);
+              if (i === 1) setForm({ habit: h, kind: 'anchor' });
+            },
+          );
+          return;
+        }
+        return setForm({ habit: h, kind: 'anchor' });
+      }
       // Today, unchecked, and its part of the day has passed → show why / minimum first.
       if (isToday && stateOn(h, idx, ctx.today, ctx) === 'pending') {
         const behind = behindPace([h], idx, ctx).length > 0;
@@ -69,7 +92,7 @@ export function useHabitActions(date?: string) {
       }
       setDetail(h);
     },
-    [isToday, idx, ctx, settings.reminders],
+    [isToday, idx, ctx, settings.reminders, getReady],
   );
 
   const onDelete = useCallback(
@@ -86,23 +109,25 @@ export function useHabitActions(date?: string) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       const action = skipped ? 'Undo skip' : isToday ? 'Skip today (rest day)' : 'Mark as rest day';
       const run = () => (skipped ? unmark(h.id, day) : mark(h.id, 'skipped', day));
+      const ready = `Get ready (${h.ready_minutes} min)`;
       if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          { title: h.name, options: [action, 'Details', 'Cancel'], cancelButtonIndex: 2 },
-          (i) => {
-            if (i === 0) run();
-            if (i === 1) setDetail(h);
-          },
-        );
+        const options = isToday ? [ready, action, 'Details', 'Cancel'] : [action, 'Details', 'Cancel'];
+        ActionSheetIOS.showActionSheetWithOptions({ title: h.name, options, cancelButtonIndex: options.length - 1 }, (i) => {
+          const picked = options[i];
+          if (picked === ready) getReady(h);
+          else if (picked === action) run();
+          else if (picked === 'Details') setDetail(h);
+        });
       } else {
         Alert.alert(h.name, undefined, [
+          ...(isToday ? [{ text: ready, onPress: () => getReady(h) }] : []),
           { text: action, onPress: run },
           { text: 'Details', onPress: () => setDetail(h) },
-          { text: 'Cancel', style: 'cancel' },
+          { text: 'Cancel', style: 'cancel' as const },
         ]);
       }
     },
-    [idx, ctx, day, isToday, mark, unmark],
+    [idx, ctx, day, isToday, mark, unmark, getReady],
   );
 
   const dismissFeeling = useCallback(() => setFeeling(null), []);
@@ -153,6 +178,10 @@ export function useHabitActions(date?: string) {
           setDetail(null);
           setTimeout(() => startTimer(h), 350);
         }}
+        onReady={(h) => {
+          setDetail(null);
+          setTimeout(() => getReady(h), 350);
+        }}
         onClose={() => setDetail(null)}
         onEdit={(h) => {
           setDetail(null);
@@ -163,5 +192,5 @@ export function useHabitActions(date?: string) {
     </>
   );
 
-  return { onToggle, onOpen, onLongPress, onDelete, openForm, startTimer, overlays };
+  return { onToggle, onOpen, onLongPress, onDelete, openForm, startTimer, getReady, overlays };
 }

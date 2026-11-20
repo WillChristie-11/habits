@@ -8,6 +8,9 @@ export const ACTION_DONE = 'done';
 export const ACTION_LATER = 'later';
 export const ACTION_SKIP = 'skip';
 export const ACTION_START = 'start';
+export const ACTION_READY = 'ready';
+/** Opens the app on the "Get ready" countdown. */
+const READY_BUTTON = { identifier: ACTION_READY, buttonTitle: 'Get ready', options: { opensAppToForeground: true } };
 const TIMER_PREFIX = 'timer-';
 
 /** 'item' → Done / Later / Skip. 'start-15' → Start 15 min / Later / Skip (avoid habits). */
@@ -25,6 +28,7 @@ async function ensureStartCategories(plan: PlannedNotification[]) {
       await Notifications.setNotificationCategoryAsync(`habit-start-${n}`, [
         // Starting opens the app to the timer.
         { identifier: ACTION_START, buttonTitle: `Start ${n} min`, options: { opensAppToForeground: true } },
+        READY_BUTTON,
         { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
         { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
       ]);
@@ -36,7 +40,7 @@ async function ensureStartCategories(plan: PlannedNotification[]) {
 }
 
 /** "Time's up" alert for a running session, in case the app is in the background. */
-export async function scheduleTimerEnd(habitId: number, at: Date, title: string, body: string) {
+export async function scheduleTimerEnd(habitId: number | string, at: Date, title: string, body: string) {
   if (!supported || (await getPermission()) !== 'granted') return;
   await Notifications.scheduleNotificationAsync({
     identifier: `${TIMER_PREFIX}${habitId}`,
@@ -45,7 +49,7 @@ export async function scheduleTimerEnd(habitId: number, at: Date, title: string,
   });
 }
 
-export async function cancelTimerEnd(habitId: number) {
+export async function cancelTimerEnd(habitId: number | string) {
   if (!supported) return;
   await Notifications.cancelScheduledNotificationAsync(`${TIMER_PREFIX}${habitId}`).catch(() => {});
 }
@@ -70,6 +74,7 @@ export async function initNotifications() {
   try {
     await Notifications.setNotificationCategoryAsync(ITEM_CATEGORY, [
       { identifier: ACTION_DONE, buttonTitle: 'Done', options: { opensAppToForeground: false } },
+      READY_BUTTON,
       { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
       { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
     ]);
@@ -132,7 +137,7 @@ export function syncNotifications(plan: PlannedNotification[]): Promise<void> {
 export interface ItemResponse {
   /** unique per tap, for de-duplication */
   key: string;
-  action: 'done' | 'later' | 'skip' | 'start' | 'open';
+  action: 'done' | 'later' | 'skip' | 'start' | 'ready' | 'open';
   habitId: number | null;
   date: string | null;
   /** what the notification was: item / morning / evening / timer */
@@ -151,7 +156,9 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
           ? 'skip'
           : a === ACTION_START
             ? 'start'
-            : 'open';
+            : a === ACTION_READY
+              ? 'ready'
+              : 'open';
   return {
     key: `${r.notification.request.identifier}|${r.notification.date}|${a}`,
     action,

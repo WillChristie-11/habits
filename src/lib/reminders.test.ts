@@ -23,6 +23,7 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     messages: [],
     habit_kind: 'want',
     session_minutes: 15,
+    ready_minutes: 3,
     ladder: [],
     ladder_index: 0,
     pair_with: null,

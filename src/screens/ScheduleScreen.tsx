@@ -56,7 +56,7 @@ export function ScheduleScreen() {
           onLongPress={actions.onLongPress}
           onDelete={actions.onDelete}
         />
-        {!editMode && anchors > 0 && <Text style={s.hint}>Tap an anchor to dismiss it · long-press to edit</Text>}
+        {!editMode && anchors > 0 && <Text style={s.hint}>Tap an anchor to mark it done · long-press to get ready or edit</Text>}
       </ScrollView>
 
       {actions.overlays}

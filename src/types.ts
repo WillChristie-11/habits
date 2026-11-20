@@ -39,6 +39,8 @@ export interface Habit {
   habit_kind: HabitKind;
   /** Length of a "Start N min" session. */
   session_minutes: number;
+  /** Length of the "Get ready" transition countdown (1 / 3 / 5 / 10). */
+  ready_minutes: number;
   /** Ordered small concrete steps; the row shows only ladder[ladder_index]. */
   ladder: string[];
   /** Index of the next step (== ladder.length when the ladder is finished). */

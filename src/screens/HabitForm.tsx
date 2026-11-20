@@ -9,6 +9,7 @@ import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
 import { suggestPlanWhen } from '../lib/reminders';
 import { MessageList } from '../components/MessageList';
+import { READY_OPTIONS } from '../lib/defaults';
 import { StepList } from '../components/StepList';
 import { useThemedStyles, type Theme } from '../theme';
 
@@ -81,6 +82,7 @@ function FormBody({
   const [messages, setMessages] = useState<string[]>(habit?.messages ?? []);
   const [habitKind, setHabitKind] = useState<HabitKind>(habit?.habit_kind ?? 'want');
   const [sessionMin, setSessionMin] = useState(habit?.session_minutes ?? 15);
+  const [readyMin, setReadyMin] = useState(habit?.ready_minutes ?? 3);
   const [ladder, setLadder] = useState<string[]>(habit?.ladder ?? []);
   const [ladderIndex, setLadderIndex] = useState(habit?.ladder_index ?? 0);
   const [pairWith, setPairWith] = useState(habit?.pair_with ?? '');
@@ -167,6 +169,7 @@ function FormBody({
       messages: isAnchor ? [] : messages,
       habit_kind: isAnchor ? 'want' : habitKind,
       session_minutes: sessionMin,
+      ready_minutes: readyMin,
       ladder: isAnchor ? [] : ladder,
       ladder_index: isAnchor ? 0 : Math.min(ladderIndex, ladder.length),
       pair_with: isAnchor ? null : pairWith.trim() || null,
@@ -204,6 +207,20 @@ function FormBody({
         <Help>Notifications are turned off for this app. Turn them on in iPhone Settings → Notifications.</Help>
       )}
     </View>
+  );
+
+  const readyFields = (
+    <>
+      <Label>Get ready</Label>
+      <View style={s.chips}>
+        {READY_OPTIONS.map((m) => (
+          <Chip key={m} label={`${m} min`} active={readyMin === m} onPress={() => setReadyMin(m)} />
+        ))}
+      </View>
+      <View style={{ marginTop: 8 }}>
+        <Help>A short countdown to wrap up what you’re doing first. Long-press the item, or use the reminder.</Help>
+      </View>
+    </>
   );
 
   const dayChips = (
@@ -283,6 +300,7 @@ function FormBody({
             {dayChips}
             <Label>Reminder</Label>
             {reminderFields}
+            {readyFields}
           </>
         ) : (
           <>
@@ -379,6 +397,8 @@ function FormBody({
                 )}
               </>
             )}
+
+            {readyFields}
 
             <Label>Session</Label>
             <Stepper value={sessionMin} min={5} max={120} step={5} onChange={setSessionMin} suffix="min" />

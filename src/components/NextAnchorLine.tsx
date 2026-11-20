@@ -11,9 +11,9 @@ import { useThemedStyles, type Theme } from '../theme';
 /**
  * Slim line on Today with the current or next anchor ("Next · Work block · 10:00 AM").
  * Tap the check to mark it done: the completion animation plays, then the next anchor slides in.
- * Tap the text to open the Schedule tab.
+ * Tap the text to open the Schedule tab; long-press it to start the "Get ready" countdown.
  */
-export function NextAnchorLine({ onDone }: { onDone(a: Habit): void }) {
+export function NextAnchorLine({ onDone, onReady }: { onDone(a: Habit): void; onReady?(a: Habit): void }) {
   const s = useThemedStyles(makeStyles);
   const { habits, idx, ctx, now } = useStore();
   const [finishing, setFinishing] = useState<{ anchor: Habit; label: 'Now' | 'Next' } | null>(null);
@@ -37,7 +37,13 @@ export function NextAnchorLine({ onDone }: { onDone(a: Habit): void }) {
         pointerEvents="none"
         style={[s.sweep, { width: sweep.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]}
       />
-      <Pressable style={s.body} onPress={() => router.push('/schedule')} accessibilityHint="Opens the schedule">
+      <Pressable
+        style={s.body}
+        onPress={() => router.push('/schedule')}
+        onLongPress={onReady ? () => onReady(a) : undefined}
+        delayLongPress={350}
+        accessibilityHint="Opens the schedule. Long-press to get ready."
+      >
         <Text style={[s.label, shown.label === 'Now' && s.labelNow]}>{shown.label}</Text>
         <Text style={[s.name, finishing && s.nameDone]} numberOfLines={1}>
           {a.name}

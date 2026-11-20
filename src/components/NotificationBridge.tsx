@@ -37,7 +37,9 @@ export function NotificationBridge() {
       if (r.action === 'done') await s.mark(r.habitId, 'done', r.date);
       else if (r.action === 'skip') await s.mark(r.habitId, 'skipped', r.date);
       else if (r.action === 'later') await s.snooze(r.habitId, r.date);
-      else if (r.action === 'start') {
+      else if (r.action === 'ready') {
+        router.push({ pathname: '/ready', params: { habitId: String(r.habitId), date: r.date } });
+      } else if (r.action === 'start') {
         // Opens the app on the timer; the timer records the start.
         router.push({ pathname: '/timer', params: { habitId: String(r.habitId), date: r.date } });
       }

@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import type { DayRecord, Frequency, Habit, HabitInput, ItemKind, JournalPage, Meta, RecordStatus, Section } from '../types';
 import { entryToLines } from '../lib/journal';
+import { defaultAnchors } from '../lib/defaults';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -9,7 +10,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -134,6 +135,28 @@ async function open() {
       });
     }
   }
+  if (version < 8) {
+    // v8: per-item "Get ready" countdown length.
+    await db.execAsync(`ALTER TABLE habits ADD COLUMN ready_minutes INTEGER NOT NULL DEFAULT 3;`);
+  }
+  if (version === 0) {
+    // Brand-new install: start with a few editable anchors.
+    const now = new Date().toISOString();
+    for (const [i, a] of defaultAnchors().entries()) {
+      await db.runAsync(
+        `INSERT INTO habits (kind, name, section, frequency, sort_order, scheduled_time, end_time, ready_minutes, created_at)
+         VALUES ('anchor', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        a.name,
+        a.section,
+        JSON.stringify(a.frequency),
+        i,
+        a.scheduled_time,
+        a.end_time,
+        a.ready_minutes,
+        now,
+      );
+    }
+  }
   if (version < SCHEMA_VERSION) await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }
@@ -149,6 +172,7 @@ interface HabitRow {
   messages: string | null;
   habit_kind: string;
   session_minutes: number;
+  ready_minutes: number;
   ladder: string | null;
   ladder_index: number;
   pair_with: string | null;
@@ -204,6 +228,7 @@ function rowToHabit(r: HabitRow): Habit {
     messages: parseMessages(r.messages),
     habit_kind: r.habit_kind === 'avoid' ? 'avoid' : 'want',
     session_minutes: r.session_minutes || 15,
+    ready_minutes: r.ready_minutes || 3,
     ladder: parseMessages(r.ladder),
     ladder_index: r.ladder_index ?? 0,
     pair_with: r.pair_with,
@@ -247,8 +272,8 @@ export async function createHabit(input: HabitInput): Promise<number> {
   const res = await db.runAsync(
     `INSERT INTO habits (kind, name, section, why, minimum_version, frequency, sort_order, stack_after,
        scheduled_time, end_time, reminder, remind_before, meta, messages,
-       habit_kind, session_minutes, ladder, ladder_index, pair_with, plan_when, plan_action, obstacle, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       habit_kind, session_minutes, ladder, ladder_index, pair_with, plan_when, plan_action, obstacle, ready_minutes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.kind,
     input.name,
     input.section,
@@ -271,6 +296,7 @@ export async function createHabit(input: HabitInput): Promise<number> {
     input.plan_when,
     input.plan_action,
     input.obstacle,
+    input.ready_minutes,
     new Date().toISOString(),
   );
   return res.lastInsertRowId;
@@ -301,6 +327,7 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     input.plan_when,
     input.plan_action,
     input.obstacle,
+    input.ready_minutes,
   ];
   if (current && current.section !== input.section) {
     // Moving sections: append to the end of the new one, and detach anything stacked on it.
@@ -318,7 +345,7 @@ export async function updateHabit(id: number, input: HabitInput): Promise<void> 
     `UPDATE habits SET name = ?, section = ?, why = ?, minimum_version = ?, frequency = ?, stack_after = ?,
        scheduled_time = ?, end_time = ?, reminder = ?, remind_before = ?, meta = ?, messages = ?,
        habit_kind = ?, session_minutes = ?, ladder = ?, ladder_index = ?, pair_with = ?,
-       plan_when = ?, plan_action = ?, obstacle = ?${orderClause}
+       plan_when = ?, plan_action = ?, obstacle = ?, ready_minutes = ?${orderClause}
      WHERE id = ?`,
     ...params,
   );

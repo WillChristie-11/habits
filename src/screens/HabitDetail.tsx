@@ -16,6 +16,7 @@ interface Props {
   onClose(): void;
   onEdit(h: Habit): void;
   onStart(h: Habit): void;
+  onReady(h: Habit): void;
 }
 
 const LEGEND: { state: DayState; label: string }[] = [
@@ -26,12 +27,12 @@ const LEGEND: { state: DayState; label: string }[] = [
   { state: 'none', label: 'Not due' },
 ];
 
-export function HabitDetail({ habit, onClose, onEdit, onStart }: Props) {
+export function HabitDetail({ habit, onClose, onEdit, onStart, onReady }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={!!habit} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.screen}>
-        {habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} />}
+        {habit && <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} onReady={onReady} />}
       </View>
     </Modal>
   );
@@ -42,11 +43,13 @@ function Body({
   onClose,
   onEdit,
   onStart,
+  onReady,
 }: {
   habit: Habit;
   onClose(): void;
   onEdit(h: Habit): void;
   onStart(h: Habit): void;
+  onReady(h: Habit): void;
 }) {
   const { habits, idx, ctx, mark, unmark } = useStore();
   const styles = useThemedStyles(makeStyles);
@@ -180,6 +183,9 @@ function Body({
 
         <View style={{ gap: 10, marginTop: 16 }}>
           {todayState !== 'paused' && <Button title={`Start ${h.session_minutes} min`} onPress={() => onStart(h)} />}
+          {todayState !== 'paused' && todayState !== 'done' && (
+            <Button kind="secondary" title={`Get ready (${h.ready_minutes} min)`} onPress={() => onReady(h)} />
+          )}
           {todayState === 'skipped' ? (
             <Button kind="secondary" title="Undo skip" onPress={() => unmark(h.id)} />
           ) : todayState !== 'done' && todayState !== 'paused' ? (

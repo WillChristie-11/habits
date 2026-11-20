@@ -74,7 +74,7 @@ export function TodayScreen() {
             <Text style={s.intentionText}>{intention}</Text>
           </Pressable>
         )}
-        {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} />}
+        {isToday && <NextAnchorLine onDone={(a) => actions.onToggle(a, 'pending')} onReady={actions.getReady} />}
         {isToday && <Banners onStart={actions.startTimer} />}
         {tracked.length > 0 && <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />}
         {!isToday && (

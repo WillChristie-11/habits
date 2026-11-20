@@ -35,6 +35,7 @@ function habit(frequency: Frequency, extra: Partial<Habit> = {}): Habit {
     messages: [],
     habit_kind: 'want',
     session_minutes: 15,
+    ready_minutes: 3,
     ladder: [],
     ladder_index: 0,
     pair_with: null,
@@ -247,4 +248,18 @@ test('plain list layout (timeline off) keeps timed habits in their section', () 
   const l = layoutDay([t], () => true, { timeline: false });
   assert.deepEqual(l.timeline, []);
   assert.deepEqual(l.sections.morning.map((r) => r.habit.name), ['pills']);
+});
+
+test('fresh installs start with three editable daily anchors', async () => {
+  const { defaultAnchors } = await import('./defaults');
+  const a = defaultAnchors();
+  assert.deepEqual(
+    a.map((x) => [x.name, x.scheduled_time, x.end_time, x.kind]),
+    [
+      ['Wake up', '07:00', null, 'anchor'],
+      ['Work block', '09:00', '17:00', 'anchor'],
+      ['Wind down', '21:30', null, 'anchor'],
+    ],
+  );
+  assert.ok(a.every((x) => x.ready_minutes === 3 && x.frequency.type === 'daily'));
 });
