@@ -10,7 +10,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 8;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -438,4 +438,62 @@ export async function savePage(date: string, text: string): Promise<void> {
     text,
     new Date().toISOString(),
   );
+}
+
+// --- Backup ---------------------------------------------------------------------------------
+
+import { BACKUP_APP, type Backup } from '../lib/backupFormat';
+export { validateBackup, type Backup } from '../lib/backupFormat';
+
+async function userTables(db: SQLite.SQLiteDatabase): Promise<string[]> {
+  const rows = await db.getAllAsync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  );
+  return rows.map((r) => r.name);
+}
+
+/** Everything in the database, as plain JSON. */
+export async function exportAll(): Promise<Backup> {
+  const db = await getDb();
+  const tables: Backup['tables'] = {};
+  for (const t of await userTables(db)) tables[t] = await db.getAllAsync<Record<string, unknown>>(`SELECT * FROM "${t}"`);
+  return { app: BACKUP_APP, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), tables };
+}
+
+/**
+ * Replace everything with the backup, in one transaction. Columns are matched by name, so a
+ * backup from an older version restores into the current schema (new columns take defaults).
+ * Returns row counts per table.
+ */
+export async function importAll(backup: Backup): Promise<Record<string, number>> {
+  const db = await getDb();
+  const tables = await userTables(db);
+  // Parents before children (records reference habits).
+  const order = [...tables].sort((a, b) => Number(a !== 'habits') - Number(b !== 'habits'));
+  const counts: Record<string, number> = {};
+  await db.execAsync('PRAGMA foreign_keys = OFF;');
+  try {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const t of [...order].reverse()) await tx.runAsync(`DELETE FROM "${t}"`);
+      for (const t of order) {
+        const rows = backup.tables[t];
+        if (!Array.isArray(rows)) continue;
+        const cols = (await tx.getAllAsync<{ name: string }>(`PRAGMA table_info("${t}")`)).map((c) => c.name);
+        let n = 0;
+        for (const row of rows) {
+          const keys = cols.filter((c) => c in row);
+          if (!keys.length) continue;
+          await tx.runAsync(
+            `INSERT INTO "${t}" (${keys.map((k) => `"${k}"`).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`,
+            ...keys.map((k) => row[k] as SQLite.SQLiteBindValue),
+          );
+          n++;
+        }
+        counts[t] = n;
+      }
+    });
+  } finally {
+    await db.execAsync('PRAGMA foreign_keys = ON;');
+  }
+  return counts;
 }

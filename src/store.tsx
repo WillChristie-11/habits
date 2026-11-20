@@ -41,6 +41,8 @@ interface Store {
   unmark(habitId: number, date?: string): Promise<void>;
   rateFeeling(habitId: number, feeling: number | null, date?: string): Promise<void>;
   updateSettings(patch: Partial<Settings>): Promise<void>;
+  /** Re-read everything from the database (after an import). */
+  reloadAll(): Promise<void>;
   updateReminders(patch: Partial<ReminderSettings>): Promise<void>;
   /**
    * Begin a timed session. Avoid habits count as done the moment a session starts, so the
@@ -80,25 +82,29 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setPages(Object.fromEntries(p.map((x) => [x.date, x.text])));
   }, []);
 
+  const loadSettingsFromDb = useCallback(async () => {
+    const raw = await db.loadSettings();
+    const s = { ...DEFAULT_SETTINGS };
+    for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
+      if (raw[k] != null) {
+        try {
+          const v = JSON.parse(raw[k]);
+          // Merge objects so settings added later get their defaults.
+          (s as any)[k] =
+            v && typeof v === 'object' && !Array.isArray(v) ? { ...(DEFAULT_SETTINGS as any)[k], ...v } : v;
+        } catch {}
+      }
+    }
+    setSettings(s);
+  }, []);
+
   useEffect(() => {
     (async () => {
-      const raw = await db.loadSettings();
-      const s = { ...DEFAULT_SETTINGS };
-      for (const k of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
-        if (raw[k] != null) {
-          try {
-            const v = JSON.parse(raw[k]);
-            // Merge objects so settings added later get their defaults.
-            (s as any)[k] =
-              v && typeof v === 'object' && !Array.isArray(v) ? { ...(DEFAULT_SETTINGS as any)[k], ...v } : v;
-          } catch {}
-        }
-      }
-      setSettings(s);
+      await loadSettingsFromDb();
       await reload();
       setReady(true);
     })();
-  }, [reload]);
+  }, [reload, loadSettingsFromDb]);
 
   // Keep "now" fresh so the date rolls over at midnight and banners update.
   useEffect(() => {
@@ -152,6 +158,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       },
       async rateFeeling(habitId, feeling, date = today) {
         await db.setFeeling(habitId, date, feeling);
+        await reload();
+      },
+      async reloadAll() {
+        await loadSettingsFromDb();
         await reload();
       },
       async updateSettings(patch) {
@@ -210,7 +220,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await db.saveSetting('reminders', JSON.stringify(next));
       },
     }),
-    [ready, habits, records, pages, idx, ctx, settings, now, today, reload],
+    [ready, habits, records, pages, idx, ctx, settings, now, today, reload, loadSettingsFromDb],
   );
 
   return (

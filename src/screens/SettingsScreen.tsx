@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { exportBackup, pickBackup, restoreBackup } from '../lib/backup';
 import { router } from 'expo-router';
 import { useStore } from '../store';
 import { Button, Help, Label, Segmented, Stepper, Toggle } from '../components/ui';
@@ -12,7 +13,8 @@ import { useThemedStyles, type AppearanceMode, type Theme } from '../theme';
 
 export function SettingsScreen() {
   const s = useThemedStyles(makeStyles);
-  const { settings, updateSettings, updateReminders } = useStore();
+  const { settings, updateSettings, updateReminders, reloadAll } = useStore();
+  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
   const a = settings.appearance;
   const r = settings.reminders;
   const [perm, setPerm] = useState<PermissionState | null>(null);
@@ -161,6 +163,68 @@ export function SettingsScreen() {
           onChange={(messages) => updateReminders({ messages })}
           placeholder="e.g. Small steps still count"
         />
+
+        <Text style={[s.group, { marginTop: 32 }]}>Backup</Text>
+        <View style={{ marginTop: 8, marginBottom: 10 }}>
+          <Help>
+            Everything lives only on this phone. Export saves one JSON file (habits, check-offs, journal, settings) wherever
+            you choose; restoring replaces everything with that file.
+          </Help>
+        </View>
+        <View style={{ gap: 10 }}>
+          <Button
+            kind="secondary"
+            title={busy === 'export' ? 'Preparing…' : 'Export backup'}
+            disabled={!!busy}
+            onPress={async () => {
+              setBusy('export');
+              try {
+                await exportBackup();
+              } catch (e) {
+                Alert.alert('Export failed', String((e as Error).message ?? e));
+              } finally {
+                setBusy(null);
+              }
+            }}
+          />
+          <Button
+            kind="secondary"
+            title={busy === 'import' ? 'Restoring…' : 'Restore from backup'}
+            disabled={!!busy}
+            onPress={async () => {
+              try {
+                const picked = await pickBackup();
+                if (!picked) return;
+                const { habits, records, pages } = picked.counts;
+                Alert.alert(
+                  'Replace everything?',
+                  `${picked.name}\n${habits} habits and anchors, ${records} check-offs, ${pages} journal pages.\n\nThis replaces all data on this phone.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Replace',
+                      style: 'destructive',
+                      onPress: async () => {
+                        setBusy('import');
+                        try {
+                          await restoreBackup(picked.backup);
+                          await reloadAll();
+                          Alert.alert('Restored', 'Your backup is back in place.');
+                        } catch (e) {
+                          Alert.alert('Restore failed', String((e as Error).message ?? e));
+                        } finally {
+                          setBusy(null);
+                        }
+                      },
+                    },
+                  ],
+                );
+              } catch (e) {
+                Alert.alert('Can’t use that file', String((e as Error).message ?? e));
+              }
+            }}
+          />
+        </View>
 
         <Text style={[s.group, { marginTop: 32 }]}>Check-off</Text>
         <View style={{ marginTop: 10 }}>
