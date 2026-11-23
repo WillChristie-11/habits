@@ -14,6 +14,7 @@ import type {
 import { entryToLines } from '../lib/journal';
 import { defaultAnchors } from '../lib/defaults';
 import { BACKUP_APP, type Backup } from '../lib/backupFormat';
+import type { DayClose } from '../lib/dayClose';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -22,7 +23,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -220,6 +221,18 @@ async function open() {
         started_at TEXT NOT NULL,
         minutes INTEGER NOT NULL,
         habit_id INTEGER REFERENCES habits(id) ON DELETE SET NULL
+      );
+    `);
+  }
+  if (version < 14) {
+    // v14: Close the day (one row per closed day; every field optional).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS day_close (
+        date TEXT PRIMARY KEY,
+        reflection TEXT,
+        action TEXT,
+        better TEXT,
+        closed_at TEXT NOT NULL
       );
     `);
   }
@@ -747,5 +760,27 @@ export async function addFocusRound(
     startedAt,
     minutes,
     habitId,
+  );
+}
+
+// --- Close the day ----------------------------------------------------------------------------
+
+export async function loadDayCloses(): Promise<DayClose[]> {
+  const db = await getDb();
+  return db.getAllAsync<DayClose>('SELECT date, reflection, action, better FROM day_close ORDER BY date');
+}
+
+/** Saves (or replaces) a day's close. */
+export async function saveDayClose(c: DayClose): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO day_close (date, reflection, action, better, closed_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(date) DO UPDATE SET reflection = excluded.reflection, action = excluded.action,
+       better = excluded.better, closed_at = excluded.closed_at`,
+    c.date,
+    c.reflection,
+    c.action,
+    c.better,
+    new Date().toISOString(),
   );
 }

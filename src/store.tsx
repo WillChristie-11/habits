@@ -3,7 +3,8 @@ import { AppState } from 'react-native';
 import { AppearanceContext, DEFAULT_APPEARANCE, type Appearance } from './theme';
 import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
-import { todayKey } from './lib/dates';
+import { addDays, todayKey } from './lib/dates';
+import { isEmptyClose, pageWithClose, type DayClose } from './lib/dayClose';
 import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
@@ -38,6 +39,8 @@ export interface Settings {
   lastTimer: { kind: TimerKind; minutes: number } | null;
   /** Chosen lengths and options. */
   timerPrefs: { focus: number; meditate: number; meditateHalfway: boolean; keepAwake: boolean };
+  /** The day Today's "Yesterday you said…" line was tapped away. */
+  betterHiddenOn: string | null;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -49,6 +52,7 @@ const DEFAULT_SETTINGS: Settings = {
   activeTimer: null,
   lastTimer: null,
   timerPrefs: { focus: 25, meditate: 10, meditateHalfway: false, keepAwake: true },
+  betterHiddenOn: null,
 };
 
 /**
@@ -72,6 +76,13 @@ interface Store {
   /** Finished Focus rounds (Sunday recap line, round numbering). */
   focusLog: db.FocusLogRow[];
   addFocusRound(minutes: number, startedAt: string, habitId: number | null): Promise<void>;
+  /** Closed days (Close the day), oldest first. */
+  dayCloses: DayClose[];
+  /**
+   * Save a day's close: the lines go on that day's journal page; with addAction the action item
+   * becomes the next day's priority (replacing one open priority when replaceId is given).
+   */
+  closeDay(c: DayClose, opts: { addAction: boolean; replaceId?: number | null }): Promise<void>;
   /** Today's priorities (all of them; see lib/priorities for what a day shows). */
   priorities: Priority[];
   addPriority(text: string): Promise<void>;
@@ -151,12 +162,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [focusLog, setFocusLog] = useState<db.FocusLogRow[]>([]);
+  const [dayCloses, setDayCloses] = useState<DayClose[]>([]);
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o, pr, fl] = await Promise.all([
+    const [h, r, p, w, o, pr, fl, dc] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
@@ -164,7 +176,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       db.loadOccurrences(),
       db.loadPriorities(),
       db.loadFocusLog(),
+      db.loadDayCloses(),
     ]);
+    setDayCloses(dc);
     setPriorities(pr);
     setFocusLog(fl);
     setHabits(h);
@@ -218,6 +232,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       focusLog,
       async addFocusRound(minutes, startedAt, habitId) {
         await db.addFocusRound(today, startedAt, minutes, habitId);
+        await reload();
+      },
+      dayCloses,
+      async closeDay(c, { addAction, replaceId }) {
+        if (isEmptyClose(c)) return;
+        await db.saveDayClose(c);
+        await db.savePage(c.date, pageWithClose(pages[c.date] ?? '', c));
+        if (addAction && c.action) {
+          if (replaceId != null) await db.deletePriority(replaceId);
+          await db.addPriority(c.action, addDays(c.date, 1));
+        }
         await reload();
       },
       priorities,
@@ -405,6 +430,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       occurrences,
       priorities,
       focusLog,
+      dayCloses,
       afterPrompt,
       idx,
       ctx,
