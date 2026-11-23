@@ -167,8 +167,8 @@ export function SettingsScreen() {
         <Text style={[s.group, { marginTop: 32 }]}>Backup</Text>
         <View style={{ marginTop: 8, marginBottom: 10 }}>
           <Help>
-            Everything lives only on this phone. Export saves one JSON file (habits, check-offs, journal, settings) wherever
-            you choose; restoring replaces everything with that file.
+            Everything lives only on this phone. Export saves one JSON file (habits, check-offs, journal, settings)
+            wherever you choose; restoring replaces everything with that file.
           </Help>
         </View>
         <View style={{ gap: 10 }}>
@@ -233,6 +233,22 @@ export function SettingsScreen() {
             note="The 1–5 “how do you feel” card closes after about 7 seconds if you don’t tap."
             value={settings.feelingAutoDismiss}
             onChange={(v) => updateSettings({ feelingAutoDismiss: v })}
+          />
+        </View>
+
+        <Text style={[s.group, { marginTop: 32 }]}>Timers</Text>
+        <View style={{ marginTop: 10, gap: 10 }}>
+          <Toggle
+            label="Keep screen on during Focus"
+            note="Also on the Focus screen itself."
+            value={settings.timerPrefs.keepAwake}
+            onChange={(v) => updateSettings({ timerPrefs: { ...settings.timerPrefs, keepAwake: v } })}
+          />
+          <Toggle
+            label="Halfway haptic in Meditate"
+            note="One light tap at the halfway point. Start and end always have one."
+            value={settings.timerPrefs.meditateHalfway}
+            onChange={(v) => updateSettings({ timerPrefs: { ...settings.timerPrefs, meditateHalfway: v } })}
           />
         </View>
       </ScrollView>

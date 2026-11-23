@@ -19,6 +19,7 @@ import Svg, { Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
 import { recapLines, weekCounts } from '../lib/journal';
+import { focusRecapLine } from '../lib/timers';
 import { wakeAnchor, wakeWeek, minutesOfDay } from '../lib/insights';
 import { WEEKDAY_NAMES, WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
@@ -277,7 +278,8 @@ function WeekStrip({
 function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences } = useStore();
+  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences, focusLog } = useStore();
+  const focusLine = focusRecapLine(focusLog, weekDays(sunday));
   const counts = weekCounts(habits, idx, ctx, sunday, occurrences);
   const lines = recapLines(pages, sunday);
   const wake = wakeWeek(wakeAnchor(habits), idx, weekDays(sunday));
@@ -285,7 +287,8 @@ function SundayRecap({ sunday }: { sunday: string }) {
   const nextWeek = addDays(sunday, 1);
   const editable = sunday === ctx.today;
   const [next, setNext] = useState(weeks[nextWeek] ?? '');
-  if (!counts.length && !lines.length && !thisWeek && !editable && !weeks[nextWeek] && !wake.text) return null;
+  if (!counts.length && !lines.length && !thisWeek && !editable && !weeks[nextWeek] && !wake.text && !focusLine)
+    return null;
   return (
     <View style={s.recap}>
       <Text style={s.recapLabel}>This week</Text>
@@ -300,6 +303,7 @@ function SundayRecap({ sunday }: { sunday: string }) {
           ))}
         </View>
       ))}
+      {focusLine && <Text style={s.recapCount}>{focusLine}</Text>}
       {wake.text && (
         <View style={s.wakeRow}>
           <Text style={s.recapLine}>

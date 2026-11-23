@@ -12,3 +12,13 @@ test('backup validation: accepts our files, refuses others and newer versions', 
   assert.throws(() => validateBackup(null, 8), /not a Habits backup/);
   assert.throws(() => validateBackup({ ...ok, tables: { records: [] } }, 8), /no habits table/);
 });
+
+test('every table the database creates is listed for the backup', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { BACKUP_TABLES } = await import('./backupFormat');
+  const src = readFileSync(new URL('../db/db.ts', import.meta.url), 'utf8');
+  const created = [...src.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
+  const dropped = [...src.matchAll(/DROP TABLE (\w+)/g)].map((m) => m[1]);
+  const live = [...new Set(created)].filter((t) => !dropped.includes(t)).sort();
+  assert.deepEqual(live, [...BACKUP_TABLES].sort());
+});

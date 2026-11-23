@@ -7,6 +7,20 @@ import { todayKey } from './lib/dates';
 import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
+import type { TimerKind } from './lib/timers';
+
+/** The Focus or Meditate timer that's running (its end time is in settings.timers[kind]). */
+export interface ActiveTimer {
+  kind: TimerKind;
+  /** focus: running · focusDone: round finished (logged) · break / breakDone: the break */
+  phase: 'focus' | 'focusDone' | 'break' | 'breakDone';
+  minutes: number;
+  habitId: number | null;
+  line: string;
+  startedAt: string;
+  /** Which start this is (so reopening the screen resumes instead of starting again). */
+  startId: string;
+}
 
 export interface Settings {
   feelingAutoDismiss: boolean;
@@ -16,6 +30,12 @@ export interface Settings {
   handledResponses: string[];
   /** Running timers' end times (ms since epoch) by key, so they survive the app being closed. */
   timers: Record<string, number>;
+  /** The Focus / Meditate timer that's running, if any (one at a time). */
+  activeTimer: ActiveTimer | null;
+  /** What holding the Timers button starts again. */
+  lastTimer: { kind: TimerKind; minutes: number } | null;
+  /** Chosen lengths and options. */
+  timerPrefs: { focus: number; meditate: number; meditateHalfway: boolean; keepAwake: boolean };
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -24,6 +44,9 @@ const DEFAULT_SETTINGS: Settings = {
   reminders: DEFAULT_REMINDERS,
   handledResponses: [],
   timers: {},
+  activeTimer: null,
+  lastTimer: null,
+  timerPrefs: { focus: 25, meditate: 10, meditateHalfway: false, keepAwake: true },
 };
 
 /**
@@ -44,6 +67,9 @@ export interface AfterPrompt {
 
 interface Store {
   ready: boolean;
+  /** Finished Focus rounds (Sunday recap line, round numbering). */
+  focusLog: db.FocusLogRow[];
+  addFocusRound(minutes: number, startedAt: string, habitId: number | null): Promise<void>;
   /** Today's priorities (all of them; see lib/priorities for what a day shows). */
   priorities: Priority[];
   addPriority(text: string): Promise<void>;
@@ -122,20 +148,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [weeks, setWeeks] = useState<Record<string, string>>({});
   const [occurrences, setOccurrences] = useState<Occurrence[]>([]);
   const [priorities, setPriorities] = useState<Priority[]>([]);
+  const [focusLog, setFocusLog] = useState<db.FocusLogRow[]>([]);
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o, pr] = await Promise.all([
+    const [h, r, p, w, o, pr, fl] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
       db.loadWeeks(),
       db.loadOccurrences(),
       db.loadPriorities(),
+      db.loadFocusLog(),
     ]);
     setPriorities(pr);
+    setFocusLog(fl);
     setHabits(h);
     setOccurrences(o);
     setRecords(r);
@@ -184,6 +213,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const store = useMemo<Store>(
     () => ({
       ready,
+      focusLog,
+      async addFocusRound(minutes, startedAt, habitId) {
+        await db.addFocusRound(today, startedAt, minutes, habitId);
+        await reload();
+      },
       priorities,
       async addPriority(text) {
         if (!text.trim()) return;
@@ -368,6 +402,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       weeks,
       occurrences,
       priorities,
+      focusLog,
       afterPrompt,
       idx,
       ctx,

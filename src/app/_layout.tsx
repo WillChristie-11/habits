@@ -31,6 +31,9 @@ function ThemedStack() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         <Stack.Screen name="tempted" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="timers" options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="focus" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
+        <Stack.Screen name="meditate" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="weigh" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="reset" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="ready" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />

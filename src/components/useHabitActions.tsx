@@ -7,6 +7,8 @@ import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
 import { wakeAnchor } from '../lib/insights';
 import { promptPriority } from './Priorities';
+import { linkedTimer } from '../lib/timers';
+import { useTimerStart } from './useTimerStart';
 import type { SwipeAction } from './SwipeRow';
 import { FeelingPicker } from './FeelingPicker';
 import { AvoidAfterCard } from './AvoidAfterCard';
@@ -41,15 +43,20 @@ export function useHabitActions(date?: string) {
   const [form, setForm] = useState<{ habit: Habit | null; kind: ItemKind } | null>(null);
   const [detail, setDetail] = useState<Habit | null>(null);
 
+  const timerStart = useTimerStart();
+
   /** Open the full-screen session timer (starting it is what counts for avoid habits). */
   const startTimer = useCallback(
     (h: Habit) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      // Linked to Focus / Meditate: start that timer for it.
+      const linked = linkedTimer(h.meta);
+      if (linked) return timerStart(linked, settings.timerPrefs[linked], h.id);
       // Avoid habits weigh it first ("How heavy does this feel right now?"), then the timer.
       const avoid = h.kind === 'habit' && h.habit_kind === 'avoid';
       router.push({ pathname: avoid ? '/weigh' : '/timer', params: { habitId: String(h.id), date: day } });
     },
-    [day],
+    [day, timerStart, settings.timerPrefs],
   );
 
   const onToggle = useCallback(
@@ -145,9 +152,12 @@ export function useHabitActions(date?: string) {
         },
       ];
       if (isToday) out.push({ label: 'Get ready', tone: 'accent', onPress: () => getReady(h) });
+      const linked = linkedTimer(h.meta);
+      if (isToday && linked)
+        out.push({ label: `Start ${settings.timerPrefs[linked]} min`, onPress: () => startTimer(h) });
       return out;
     },
-    [idx, ctx, day, isToday, unmark, skip, getReady],
+    [idx, ctx, day, isToday, unmark, skip, getReady, startTimer, settings.timerPrefs],
   );
 
   const dismissPrompt = useCallback(() => setAfterPrompt(null), [setAfterPrompt]);

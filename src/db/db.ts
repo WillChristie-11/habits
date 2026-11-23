@@ -22,7 +22,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -208,6 +208,18 @@ async function open() {
         text TEXT NOT NULL,
         created_on TEXT NOT NULL,
         done_on TEXT
+      );
+    `);
+  }
+  if (version < 13) {
+    // v13: finished Focus rounds, for the Sunday recap's one Focus line (never counted otherwise).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS focus_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        minutes INTEGER NOT NULL,
+        habit_id INTEGER REFERENCES habits(id) ON DELETE SET NULL
       );
     `);
   }
@@ -703,4 +715,37 @@ export async function setPriorityDone(id: number, date: string | null): Promise<
 export async function deletePriority(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM priorities WHERE id = ?', id);
+}
+
+// --- Focus rounds -----------------------------------------------------------------------------
+
+export interface FocusLogRow {
+  id: number;
+  date: string;
+  started_at: string;
+  minutes: number;
+  habit_id: number | null;
+}
+
+export async function loadFocusLog(): Promise<FocusLogRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<FocusLogRow>(
+    'SELECT id, date, started_at, minutes, habit_id FROM focus_log ORDER BY started_at',
+  );
+}
+
+export async function addFocusRound(
+  date: string,
+  startedAt: string,
+  minutes: number,
+  habitId: number | null,
+): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO focus_log (date, started_at, minutes, habit_id) VALUES (?, ?, ?, ?)',
+    date,
+    startedAt,
+    minutes,
+    habitId,
+  );
 }

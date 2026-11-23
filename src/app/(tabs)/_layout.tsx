@@ -1,4 +1,5 @@
-import { Tabs } from 'expo-router/js-tabs';
+import { BottomTabBar, Tabs } from 'expo-router/js-tabs';
+import { RunningBar } from '../../components/RunningBar';
 import { SymbolView } from 'expo-symbols';
 import { useTheme } from '../../theme';
 
@@ -6,6 +7,13 @@ export default function TabsLayout() {
   const t = useTheme();
   return (
     <Tabs
+      // The running Focus / Meditate bar sits just above the tab bar on every tab.
+      tabBar={(props) => (
+        <>
+          <RunningBar />
+          <BottomTabBar {...props} />
+        </>
+      )}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: t.accent,

@@ -36,7 +36,8 @@
         {
           "faceIDPermission": "Lets you lock cut-back habits behind Face ID."
         }
-      ]
+      ],
+      "expo-video"
     ],
     "scheme": "habits",
     "extra": {

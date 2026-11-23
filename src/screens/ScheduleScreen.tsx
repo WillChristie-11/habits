@@ -9,6 +9,7 @@ import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
 import { ResetButton } from '../components/ResetButton';
+import { TimersButton } from '../components/TimersButton';
 import { useThemedStyles, type Theme } from '../theme';
 
 /** Today's plan: anchors and timed habits at their times, flexible habits in their windows. */
@@ -33,7 +34,16 @@ export function ScheduleScreen() {
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      <ScreenHeader dateLine={dateLine} title="Schedule" below={<ResetButton />} />
+      <ScreenHeader
+        dateLine={dateLine}
+        title="Schedule"
+        below={
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <ResetButton />
+            <TimersButton />
+          </View>
+        }
+      />
 
       <ScrollView
         scrollEnabled={scrollEnabled}

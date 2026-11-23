@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { Chip, Help, Input, Label, Segmented, Stepper, Toggle } from '../components/ui';
 import { TimeField, formatTime } from '../components/TimeField';
 import { counts, isWeekly } from '../lib/schedule';
+import { linkedTimer, type TimerKind } from '../lib/timers';
 import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
 import { suggestPlanWhen } from '../lib/reminders';
@@ -92,6 +93,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [checkMin, setCheckMin] = useState(habit?.check_minutes ?? 45);
   const [locked, setLocked] = useState(habit?.locked ?? false);
   const [more, setMore] = useState(false);
+  const [timerLink, setTimerLink] = useState<TimerKind | null>(linkedTimer(habit?.meta));
   const look = habit
     ? activityLook(habit)
     : { color: tileColors[0] as string, icon: ACTIVITY_ICONS[0] as ActivityIconName };
@@ -201,7 +203,11 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
       end_time: isAnchor && hasEnd ? endTime : null,
       reminder: scheduled && reminder,
       remind_before: remindBefore,
-      meta: isActivity ? { ...(habit?.meta ?? {}), color: tileColor, icon: tileIcon } : (habit?.meta ?? null),
+      meta: isActivity
+        ? { ...(habit?.meta ?? {}), color: tileColor, icon: tileIcon }
+        : plain
+          ? { ...(habit?.meta ?? {}), timer: timerLink ?? undefined }
+          : (habit?.meta ?? null),
     };
     if (habit) await editHabit(habit.id, input);
     else await addHabit(input);
@@ -261,6 +267,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
     scheduled && reminder,
     readyMin !== 3,
     (plain || isAnchor) && askNote,
+    plain && timerLink != null,
     isHabit && afterHabit,
     isHabit && planWhen != null,
     isHabit && obstacle != null,
@@ -561,6 +568,30 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
                   </>
                 )}
                 {readyFields}
+
+                {plain && (
+                  <>
+                    <Label hint="optional">Timer</Label>
+                    <Segmented<TimerKind | 'none'>
+                      value={timerLink ?? 'none'}
+                      onChange={(v) => setTimerLink(v === 'none' ? null : v)}
+                      options={[
+                        { value: 'none', label: 'None' },
+                        { value: 'focus', label: 'Focus' },
+                        { value: 'meditate', label: 'Meditate' },
+                      ]}
+                    />
+                    <View style={{ marginTop: 8 }}>
+                      <Help>
+                        {timerLink === 'focus'
+                          ? 'Start it as a Focus round. The first finished round checks it off (an avoid habit counts when the round starts).'
+                          : timerLink === 'meditate'
+                            ? 'Start it as a Meditate session. Finishing it checks it off.'
+                            : 'Link a Focus or Meditate timer to start it in one tap.'}
+                      </Help>
+                    </View>
+                  </>
+                )}
 
                 <View style={{ marginTop: 18 }}>
                   <Toggle

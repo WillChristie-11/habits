@@ -55,6 +55,19 @@ export const tileColors = [
 ] as const;
 export const onTile = '#FFFFFF';
 
+/**
+ * Focus / Meditate: text and gradients drawn over the videos. Shared by both themes (the running
+ * Focus screen always uses the Midnight colours; see `themes.midnight`).
+ */
+export const timerColors = {
+  onVideo: '#FFFFFF',
+  onVideoMuted: 'rgba(255,255,255,0.72)',
+  focusShade: '#0B0E13',
+  meditateShade: '#0E2A1A',
+  tint: '#000000',
+  chip: 'rgba(255,255,255,0.18)',
+} as const;
+
 export const themes = {
   forest: {
     id: 'forest',

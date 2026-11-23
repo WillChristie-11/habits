@@ -10,6 +10,7 @@ import { useThemedStyles, type Theme } from '../theme';
 import { formatTime } from '../components/TimeField';
 import { ifThenLine, obstacleLine, pickMessage } from '../lib/reminders';
 import { feelingContrast } from '../lib/insights';
+import { linkedTimer } from '../lib/timers';
 
 interface Props {
   habit: Habit | null;
@@ -82,6 +83,8 @@ function Body({
   // A rotating line besides the why (which has its own card).
   const message = pickMessage({ ...h, why: null }, ctx.today, settings.reminders.messages);
   const avoid = h.habit_kind === 'avoid';
+  // Linked to Focus / Meditate: Start opens that timer at its chosen length.
+  const linked = linkedTimer(h.meta);
 
   return (
     <View style={{ flex: 1 }}>
@@ -223,7 +226,7 @@ function Body({
           {todayState !== 'paused' && (
             <Button
               kind={pending && !avoid ? 'secondary' : 'primary'}
-              title={`Start ${h.session_minutes} min`}
+              title={`Start ${linked ? settings.timerPrefs[linked] : h.session_minutes} min`}
               onPress={() => onStart(h)}
             />
           )}

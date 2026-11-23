@@ -18,6 +18,10 @@ const KEEP = [TIMER_PREFIX, FOLLOW_PREFIX];
 export const FEEL_CATEGORY = 'cutback-feel';
 export const ACTION_NOTE = 'note';
 const FEEL_ACTION = /^feel-([1-5])$/;
+/** Focus round done: Break · Keep going · Done (each opens the app on the Focus screen). */
+export const FOCUS_END_CATEGORY = 'focus-end';
+export const FOCUS_ACTIONS = ['focus-break', 'focus-keep', 'focus-done'] as const;
+export type FocusAction = (typeof FOCUS_ACTIONS)[number];
 
 /** 'item' → Done / Later / Skip. 'start-15' → Start 15 min / Later / Skip (avoid habits). */
 const categoryId = (c: string) => (c === 'item' ? ITEM_CATEGORY : `habit-${c}`);
@@ -46,11 +50,30 @@ async function ensureStartCategories(plan: PlannedNotification[]) {
 }
 
 /** "Time's up" alert for a running session, in case the app is in the background. */
-export async function scheduleTimerEnd(habitId: number | string, at: Date, title: string, body: string) {
+export interface TimerAlertOptions {
+  /** Buttons on the notification (e.g. Focus done: Break · Keep going · Done). */
+  category?: string;
+  /** 'background' = only shown when the app isn't open (Meditate's "10 minutes. Done."). */
+  when?: 'always' | 'background';
+}
+
+export async function scheduleTimerEnd(
+  habitId: number | string,
+  at: Date,
+  title: string,
+  body: string,
+  opts: TimerAlertOptions = {},
+) {
   if (!supported || (await getPermission()) !== 'granted') return;
   await Notifications.scheduleNotificationAsync({
     identifier: `${TIMER_PREFIX}${habitId}`,
-    content: { title, body, sound: true, data: { type: 'timer', habitId } },
+    content: {
+      title,
+      body,
+      sound: true,
+      data: { type: opts.when === 'background' ? 'timer-quiet' : 'timer', timerKey: String(habitId) },
+      ...(opts.category ? { categoryIdentifier: opts.category } : {}),
+    },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
   });
 }
@@ -104,6 +127,11 @@ export async function initNotifications() {
       READY_BUTTON,
       { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
       { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
+    ]);
+    await Notifications.setNotificationCategoryAsync(FOCUS_END_CATEGORY, [
+      { identifier: 'focus-break', buttonTitle: 'Break', options: { opensAppToForeground: true } },
+      { identifier: 'focus-keep', buttonTitle: 'Keep going', options: { opensAppToForeground: true } },
+      { identifier: 'focus-done', buttonTitle: 'Done', options: { opensAppToForeground: true } },
     ]);
     await Notifications.setNotificationCategoryAsync(FEEL_CATEGORY, [
       ...['Drained', 'Meh', 'Okay', 'Good', 'Great'].map((label, i) => ({
@@ -189,6 +217,9 @@ export interface ItemResponse {
   occurrenceId: number | null;
   feeling: number | null;
   text: string | null;
+  /** timer alerts: which timer (focus / meditate / session-…) and a Focus button, if tapped */
+  timerKey: string | null;
+  focusAction: FocusAction | null;
 }
 
 export function parseResponse(r: Notifications.NotificationResponse): ItemResponse {
@@ -197,6 +228,7 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
     date?: string;
     type?: string;
     occurrenceId?: number;
+    timerKey?: string;
   };
   const a = r.actionIdentifier;
   const feel = a.match(FEEL_ACTION);
@@ -224,6 +256,8 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
     occurrenceId: typeof data.occurrenceId === 'number' ? data.occurrenceId : null,
     feeling: feel ? Number(feel[1]) : null,
     text: typeof r.userText === 'string' && r.userText.trim() ? r.userText.trim() : null,
+    timerKey: typeof data.timerKey === 'string' ? data.timerKey : null,
+    focusAction: (FOCUS_ACTIONS as readonly string[]).includes(a) ? (a as FocusAction) : null,
   };
 }
 

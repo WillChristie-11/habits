@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { cancelTimerEnd, scheduleTimerEnd } from '../lib/notifications';
+import { cancelTimerEnd, scheduleTimerEnd, type TimerAlertOptions } from '../lib/notifications';
 
 /**
  * A timer kept as its end time (saved in the store), not a running count, so it stays right if
@@ -9,7 +9,7 @@ import { cancelTimerEnd, scheduleTimerEnd } from '../lib/notifications';
  * `key` names the timer (one per key). If a saved end time exists, it's picked up again;
  * otherwise nothing runs until start(). `alert` is the notification shown at the end.
  */
-export function useEndTime(key: string, alert: { title: string; body: string } | null) {
+export function useEndTime(key: string, alert: ({ title: string; body: string } & TimerAlertOptions) | null) {
   const { settings, setTimerEnd } = useStore();
   // The store is the single source: it's saved, so a reopened app picks the timer up again.
   const endsAt = settings.timers[key] ?? null;
@@ -22,11 +22,12 @@ export function useEndTime(key: string, alert: { title: string; body: string } |
   }, [endsAt]);
 
   const start = useCallback(
-    (durationMs: number) => {
+    (durationMs: number, alertOverride?: ({ title: string; body: string } & TimerAlertOptions) | null) => {
       const end = Date.now() + durationMs;
       setNow(Date.now());
       setTimerEnd(key, end);
-      if (alert) scheduleTimerEnd(key, new Date(end), alert.title, alert.body);
+      const a = alertOverride === undefined ? alert : alertOverride;
+      if (a) scheduleTimerEnd(key, new Date(end), a.title, a.body, a);
       return end;
     },
     [key, alert, setTimerEnd],

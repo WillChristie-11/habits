@@ -2,6 +2,21 @@
 
 export const BACKUP_APP = 'habits';
 
+/**
+ * Every table the app stores, all of which go into a backup (the export takes every table; this
+ * list is checked by a test so a new table is never forgotten). Add new tables here.
+ */
+export const BACKUP_TABLES = [
+  'habits',
+  'records',
+  'settings',
+  'pages',
+  'weeks',
+  'occurrences',
+  'priorities',
+  'focus_log',
+] as const;
+
 export interface Backup {
   app: typeof BACKUP_APP;
   schemaVersion: number;

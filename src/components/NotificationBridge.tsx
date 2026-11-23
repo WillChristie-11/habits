@@ -38,6 +38,11 @@ export function NotificationBridge() {
       handled.add(r.key);
       const s = storeRef.current;
       await s.updateSettings({ handledResponses: [...handled].slice(-40) });
+      // Focus / Meditate end: open the running timer (Focus buttons: Break · Keep going · Done).
+      if ((r.type === 'timer' || r.type === 'timer-quiet') && (r.timerKey === 'focus' || r.timerKey === 'meditate')) {
+        router.push({ pathname: `/${r.timerKey}`, params: r.focusAction ? { action: r.focusAction } : {} });
+        return;
+      }
       // Cut-back follow-up: 1–5 and a note straight from the notification; a tap opens Tempted?.
       if (r.type === 'follow' && r.occurrenceId != null) {
         if (r.action === 'feel') await s.rateOccurrence(r.occurrenceId, { feeling: r.feeling });
