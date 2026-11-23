@@ -476,5 +476,54 @@ export function planNotifications(
     });
   }
 
-  return out.sort((a, b) => a.at.getTime() - b.at.getTime()).slice(0, MAX_SCHEDULED);
+  // "Pause all reminders today" drops everything until midnight; silenced occurrences are dropped.
+  const midnight = atTime(addDays(ctx.today, 1), '00:00').getTime();
+  const silenced = new Set(r.silenced);
+  return out
+    .filter((p) => !(r.pausedOn === ctx.today && p.at.getTime() < midnight) && !silenced.has(p.id))
+    .sort((a, b) => a.at.getTime() - b.at.getTime())
+    .slice(0, MAX_SCHEDULED);
+}
+
+/** Silenced ids still worth keeping: their date (in the id) is today or later. */
+export function liveSilenced(ids: string[], today: string): string[] {
+  return ids.filter((id) => (id.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? '') >= today);
+}
+
+export type UpcomingRow =
+  | { kind: 'one'; id: string; at: Date; title: string; body: string; group: string }
+  | { kind: 'checkins'; id: string; date: string; count: number; start: string; end: string };
+
+const GROUP: Record<string, string> = {
+  item: 'Reminder',
+  morning: 'Morning reminder',
+  evening: 'Evening nudge',
+  close: 'Close the day',
+  nudge: 'Nudge',
+};
+
+/**
+ * Today's and tomorrow's plan as the Upcoming list, in time order. Random check-ins collapse to
+ * one row a day ("2 check-ins between 9:00 AM and 9:00 PM") so their times stay a surprise.
+ */
+export function upcomingRows(plan: PlannedNotification[], r: ReminderSettings): UpcomingRow[] {
+  const rows: UpcomingRow[] = [];
+  const checkins = new Map<string, number>();
+  for (const p of plan) {
+    if (p.id.startsWith('checkin-')) checkins.set(p.data.date, (checkins.get(p.data.date) ?? 0) + 1);
+    else
+      rows.push({
+        kind: 'one',
+        id: p.id,
+        at: p.at,
+        title: p.title,
+        body: p.body,
+        group: GROUP[p.data.type] ?? 'Reminder',
+      });
+  }
+  for (const [date, count] of checkins) {
+    rows.push({ kind: 'checkins', id: `checkins-${date}`, date, count, start: r.checkins.start, end: r.checkins.end });
+  }
+  const when = (x: UpcomingRow) => (x.kind === 'one' ? x.at.getTime() : atTime(x.date, x.start).getTime());
+  return rows.sort((a, b) => when(a) - when(b));
 }

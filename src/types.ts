@@ -161,6 +161,12 @@ export interface ReminderSettings {
   checkins: CheckinSettings;
   /** Close the day? at the Wind down time. */
   closeDayEnabled: boolean;
+  /** "Pause all reminders today": the date it was turned on (it lapses at midnight). */
+  pausedOn: string | null;
+  /** Single occurrences silenced from the Upcoming list (notification ids, which carry their date). */
+  silenced: string[];
+  /** Focus / break / Meditate end alerts. */
+  timerAlerts: boolean;
 }
 
 /** Random check-ins: a few nudges a day at unpredictable times, about something still open. */
@@ -184,4 +190,7 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   messages: [],
   checkins: { enabled: true, count: 2, start: '09:00', end: '21:00', spacing: 90 },
   closeDayEnabled: true,
+  pausedOn: null,
+  silenced: [],
+  timerAlerts: true,
 };

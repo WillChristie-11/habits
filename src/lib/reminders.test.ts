@@ -426,3 +426,44 @@ test('close the day: one notification at Wind down unless closed; the morning ca
   );
   assert.ok(!off.some((p) => p.data.type === 'close'));
 });
+
+test('pause all today, silenced occurrences, and the upcoming list', async () => {
+  const { planNotifications, upcomingRows, liveSilenced } = await import('./reminders');
+  const { DEFAULT_REMINDERS } = await import('../types');
+  const { indexRecords } = await import('./schedule');
+  const now = new Date('2026-11-23T06:00:00');
+  const ctx = { today: '2026-11-23' };
+  const r = { ...DEFAULT_REMINDERS, checkins: { ...DEFAULT_REMINDERS.checkins, count: 2 } };
+  const close = { windDown: '21:30', closed: [], better: { '2026-11-22': 'phone away' } };
+  const read = habit(daily, { name: 'Read' });
+  const plan = planNotifications([read], indexRecords([]), ctx, r, now, close);
+  assert.ok(plan.some((p) => p.id === 'close-2026-11-23'));
+
+  const paused = planNotifications([read], indexRecords([]), ctx, { ...r, pausedOn: '2026-11-23' }, now, close);
+  assert.ok(paused.every((p) => p.data.date === '2026-11-24'));
+  assert.ok(paused.length > 0);
+
+  const quiet = planNotifications([read], indexRecords([]), ctx, { ...r, silenced: ['close-2026-11-23'] }, now, close);
+  assert.ok(!quiet.some((p) => p.id === 'close-2026-11-23'));
+  assert.ok(quiet.some((p) => p.id === 'close-2026-11-24'));
+
+  const rows = upcomingRows(plan, r);
+  const checkins = rows.filter((x) => x.kind === 'checkins');
+  assert.deepEqual(
+    checkins.map((x) => x.kind === 'checkins' && [x.date, x.count]),
+    [
+      ['2026-11-23', 2],
+      ['2026-11-24', 2],
+    ],
+  );
+  assert.ok(!rows.some((x) => x.kind === 'one' && x.id.startsWith('checkin-')));
+  const times = rows.map((x) => (x.kind === 'one' ? x.at.getTime() : new Date(`${x.date}T${x.start}:00`).getTime()));
+  assert.deepEqual(
+    times,
+    [...times].sort((a, b) => a - b),
+  );
+  assert.deepEqual(liveSilenced(['close-2026-11-22', 'item-3-2026-11-23', 'nudge-4-2026-11-24-1'], '2026-11-23'), [
+    'item-3-2026-11-23',
+    'nudge-4-2026-11-24-1',
+  ]);
+});

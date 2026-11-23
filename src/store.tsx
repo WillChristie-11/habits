@@ -97,6 +97,11 @@ interface Store {
   syncNudgeLog(planned: PlannedNudge[]): Promise<void>;
   /** A nudge was tapped or answered. */
   markNudge(id: string, action: string): Promise<void>;
+  /** Edit an item's reminder in place: on/off, its time, the lead time. */
+  setHabitReminder(
+    id: number,
+    patch: { reminder?: boolean; scheduled_time?: string; remind_before?: number },
+  ): Promise<void>;
   /** Merge fields into an item's meta (voice, quiet for a week, nudge time…). */
   setHabitMeta(id: number, patch: Record<string, unknown>): Promise<void>;
   /** Not today reasons for avoid habits, oldest first. */
@@ -291,6 +296,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       async markNudge(id, action) {
         await db.markNudgeOpened(id, action);
         setNudgeLog(await db.loadNudgeLog());
+      },
+      async setHabitReminder(id, patch) {
+        await db.setHabitReminder(id, patch);
+        await reload();
       },
       async setHabitMeta(id, patch) {
         await db.setHabitMeta(id, patch);

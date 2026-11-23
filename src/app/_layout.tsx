@@ -32,6 +32,7 @@ function ThemedStack() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="reminders" options={{ presentation: 'modal' }} />
         <Stack.Screen name="now" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
         <Stack.Screen name="tempted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="close" options={{ presentation: 'modal' }} />

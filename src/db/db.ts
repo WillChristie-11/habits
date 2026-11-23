@@ -951,3 +951,17 @@ export async function saveWeekOutcome(weekStart: string, outcome: WeekOutcome): 
     new Date().toISOString(),
   );
 }
+
+/** Edit an item's reminder in place (Reminders page): on/off, its time, the lead time. */
+export async function setHabitReminder(
+  id: number,
+  patch: { reminder?: boolean; scheduled_time?: string; remind_before?: number },
+): Promise<void> {
+  const db = await getDb();
+  if (patch.reminder != null)
+    await db.runAsync('UPDATE habits SET reminder = ? WHERE id = ?', patch.reminder ? 1 : 0, id);
+  if (patch.scheduled_time != null)
+    await db.runAsync('UPDATE habits SET scheduled_time = ? WHERE id = ?', patch.scheduled_time, id);
+  if (patch.remind_before != null)
+    await db.runAsync('UPDATE habits SET remind_before = ? WHERE id = ?', patch.remind_before, id);
+}

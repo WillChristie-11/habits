@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
-import { planNotifications } from '../lib/reminders';
-import { windDownAnchor } from '../lib/dayClose';
+import { buildPlan } from '../lib/plan';
 import { REASON_REPLY, type Frame } from '../lib/nudges';
-import { horizonOn } from '../lib/direction';
 import {
   initNotifications,
   listenForResponses,
@@ -113,15 +111,9 @@ export function NotificationBridge() {
   // Debounced re-plan + reschedule.
   useEffect(() => {
     const t = setTimeout(() => {
-      const close = {
-        windDown: windDownAnchor(habits)?.scheduled_time ?? null,
-        closed: dayCloses.map((c) => c.date),
-        better: Object.fromEntries(dayCloses.filter((c) => c.better).map((c) => [c.date, c.better as string])),
-      };
       // The nudge log is read through the ref: writing it must not start another re-plan.
       const s = storeRef.current;
-      const nudges = { log: s.nudgeLog, notToday, weeks, horizon: horizonOn(months, ctx.today)?.line ?? null };
-      const plan = planNotifications(habits, idx, ctx, settings.reminders, new Date(), close, nudges);
+      const plan = buildPlan({ ...s, reminders: settings.reminders }, new Date());
       syncNotifications(plan);
       s.syncNudgeLog(
         plan

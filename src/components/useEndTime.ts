@@ -27,10 +27,11 @@ export function useEndTime(key: string, alert: ({ title: string; body: string } 
       setNow(Date.now());
       setTimerEnd(key, end);
       const a = alertOverride === undefined ? alert : alertOverride;
-      if (a) scheduleTimerEnd(key, new Date(end), a.title, a.body, a);
+      // Settings → Reminders → Timer alerts can turn these off.
+      if (a && settings.reminders.timerAlerts) scheduleTimerEnd(key, new Date(end), a.title, a.body, a);
       return end;
     },
-    [key, alert, setTimerEnd],
+    [key, alert, setTimerEnd, settings.reminders.timerAlerts],
   );
 
   const clear = useCallback(() => {

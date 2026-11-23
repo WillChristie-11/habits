@@ -1,13 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { exportBackup, pickBackup, restoreBackup } from '../lib/backup';
 import { router } from 'expo-router';
 import { useStore } from '../store';
-import { Button, Help, Label, Segmented, Stepper, Toggle } from '../components/ui';
-import { TimeField } from '../components/TimeField';
-import { getPermission, requestPermission, type PermissionState } from '../lib/notifications';
-import { formatTime } from '../lib/dates';
-import { nudgeStart } from '../lib/reminders';
+import { Button, Help, Label, Segmented, Toggle } from '../components/ui';
 import { MessageList } from '../components/MessageList';
 import { useThemedStyles, type AppearanceMode, type Theme } from '../theme';
 
@@ -17,15 +13,6 @@ export function SettingsScreen() {
   const [busy, setBusy] = useState<'export' | 'import' | null>(null);
   const a = settings.appearance;
   const r = settings.reminders;
-  const [perm, setPerm] = useState<PermissionState | null>(null);
-  useEffect(() => {
-    getPermission().then(setPerm);
-  }, []);
-  const enablePermission = async () => {
-    const p = await requestPermission();
-    setPerm(p);
-    if (p === 'denied') Linking.openSettings();
-  };
   const setAppearance = (patch: Partial<typeof a>) => updateSettings({ appearance: { ...a, ...patch } });
 
   return (
@@ -59,103 +46,14 @@ export function SettingsScreen() {
         </View>
 
         <Text style={[s.group, { marginTop: 32 }]}>Reminders</Text>
-        {perm && perm !== 'granted' && perm !== 'unsupported' && (
-          <View style={s.permBox}>
-            <Help>
-              {perm === 'denied'
-                ? 'Notifications are off for this app. Banners still show in the app.'
-                : 'Allow notifications to get reminders when the app is closed.'}
-            </Help>
-            <View style={{ marginTop: 10 }}>
-              <Button
-                kind="primary"
-                title={perm === 'denied' ? 'Open iPhone Settings' : 'Turn on notifications'}
-                onPress={enablePermission}
-              />
-            </View>
-          </View>
-        )}
-        <View style={{ marginTop: 10, gap: 10 }}>
-          <Toggle
-            label="Morning reminder"
-            note="Banner + notification listing unfinished morning habits."
-            value={r.morningEnabled}
-            onChange={(v) => updateReminders({ morningEnabled: v })}
-          />
-          {r.morningEnabled && (
-            <View style={s.timeRow}>
-              <Text style={s.timeLabel}>Time</Text>
-              <TimeField value={r.morningTime} onChange={(morningTime) => updateReminders({ morningTime })} />
-            </View>
-          )}
-          <Toggle
-            label="Evening nudge"
-            note={`From ${formatTime(nudgeStart(r))}: what’s left and how long until your deadline.`}
-            value={r.eveningEnabled}
-            onChange={(v) => updateReminders({ eveningEnabled: v })}
-          />
-          <View style={s.timeRow}>
-            <Text style={s.timeLabel}>Deadline</Text>
-            <TimeField value={r.eveningDeadline} onChange={(eveningDeadline) => updateReminders({ eveningDeadline })} />
-          </View>
-          <Toggle
-            label="Close the day"
-            note="One notification at Wind down: three optional lines, then you’re done. Not if the day is already closed."
-            value={r.closeDayEnabled}
-            onChange={(v) => updateReminders({ closeDayEnabled: v })}
-          />
-        </View>
-        <View style={{ marginTop: 8 }}>
-          <Help>Reminders for anchors and timed habits are set on each item.</Help>
-        </View>
-
-        <Text style={[s.group, { marginTop: 32 }]}>Random check-ins</Text>
-        <View style={{ marginTop: 10, gap: 10 }}>
-          <Toggle
-            label="Check-ins"
-            note="A few nudges at unpredictable times about something still open today."
-            value={r.checkins.enabled}
-            onChange={(enabled) => updateReminders({ checkins: { ...r.checkins, enabled } })}
-          />
-          {r.checkins.enabled && (
-            <>
-              <View style={s.timeRow}>
-                <Text style={s.timeLabel}>Per day</Text>
-                <Stepper
-                  value={r.checkins.count}
-                  min={1}
-                  max={6}
-                  onChange={(count) => updateReminders({ checkins: { ...r.checkins, count } })}
-                />
-              </View>
-              <View style={s.timeRow}>
-                <Text style={s.timeLabel}>From</Text>
-                <TimeField
-                  value={r.checkins.start}
-                  onChange={(start) => updateReminders({ checkins: { ...r.checkins, start } })}
-                />
-              </View>
-              <View style={s.timeRow}>
-                <Text style={s.timeLabel}>Until</Text>
-                <TimeField
-                  value={r.checkins.end}
-                  onChange={(end) => updateReminders({ checkins: { ...r.checkins, end } })}
-                />
-              </View>
-              <View style={s.timeRow}>
-                <Text style={s.timeLabel}>At least apart</Text>
-                <Stepper
-                  value={r.checkins.spacing}
-                  min={30}
-                  max={240}
-                  step={15}
-                  suffix="min"
-                  onChange={(spacing) => updateReminders({ checkins: { ...r.checkins, spacing } })}
-                />
-              </View>
-            </>
-          )}
-        </View>
+        <Pressable
+          onPress={() => router.push('/reminders')}
+          style={({ pressed }) => [s.permBox, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+        >
+          <Text style={s.timeLabel}>Reminders ›</Text>
+          <Help>Every reminder in one place: turn them on or off, change times, see what’s coming up.</Help>
+        </Pressable>
 
         <Text style={[s.group, { marginTop: 32 }]}>Motivational messages</Text>
         <View style={{ marginTop: 8, marginBottom: 10 }}>
