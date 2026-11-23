@@ -73,3 +73,38 @@ test('wake times: the Wake up anchor, range text, missing days null', () => {
   assert.match(w.text!, /^Woke 6:40\sAM – 7:55\sAM$/);
   assert.equal(wakeWeek(wake, indexRecords([]), days).text, null);
 });
+
+test('expected vs felt: pairs need both numbers; last 9, oldest first; lighter/same/heavier worked out', async () => {
+  const { expectedVsFelt, expectedFeltText, feltVs, keptLines } = await import('./insights');
+  const r = (date: string, meta: Record<string, unknown> | null): DayRecord => ({ ...rec(date, 'done', null), meta });
+  const recs = [
+    r('2026-10-01', { dreadBefore: 4, feltScore: 2 }),
+    r('2026-10-02', { dreadBefore: 3 }), // no felt score: left out
+    r('2026-10-03', { dreadBefore: 2, feltScore: 2 }),
+    r('2026-10-04', { dreadBefore: 2, feltScore: 4, note: 'harder than it looked', keepLine: true }),
+    r('2026-10-05', { dreadBefore: 9, feltScore: 2 }), // out of range: left out
+    r('2026-10-06', { note: 'two applications out', keepLine: true }),
+    r('2026-10-07', { note: 'not kept', keepLine: false }),
+  ];
+  const ev = expectedVsFelt(h, indexRecords(recs));
+  assert.deepEqual(
+    ev.pairs.map((p) => [p.date, p.expected, p.felt]),
+    [
+      ['2026-10-01', 4, 2],
+      ['2026-10-03', 2, 2],
+      ['2026-10-04', 2, 4],
+    ],
+  );
+  assert.equal(ev.lighter, 1);
+  assert.equal(expectedFeltText(ev.pairs[0]), 'Expected 4, felt like 2');
+  assert.deepEqual([feltVs(4, 2), feltVs(2, 2), feltVs(2, 4)], ['lighter', 'same', 'heavier']);
+  const many = Array.from({ length: 12 }, (_, i) => r(day(i), { dreadBefore: 3, feltScore: 1 + (i % 5) }));
+  const last9 = expectedVsFelt(h, indexRecords(many));
+  assert.equal(last9.rated, 9);
+  assert.equal(last9.pairs[0].date, day(3));
+  assert.deepEqual(
+    keptLines(h, indexRecords(recs)).map((k) => k.text),
+    ['two applications out', 'harder than it looked'],
+  );
+  assert.equal(expectedVsFelt(h, indexRecords([])).latest, null);
+});

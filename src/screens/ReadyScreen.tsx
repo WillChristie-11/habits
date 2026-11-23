@@ -105,7 +105,7 @@ export function ReadyScreen() {
     timer.clear();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     if (avoid) {
-      router.replace({ pathname: '/timer', params: { habitId: String(item.id), date } });
+      router.replace({ pathname: '/weigh', params: { habitId: String(item.id), date } });
     } else setDoing(true);
   };
 

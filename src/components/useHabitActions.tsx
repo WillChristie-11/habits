@@ -9,6 +9,7 @@ import { wakeAnchor } from '../lib/insights';
 import { promptPriority } from './Priorities';
 import type { SwipeAction } from './SwipeRow';
 import { FeelingPicker } from './FeelingPicker';
+import { AvoidAfterCard } from './AvoidAfterCard';
 import { HabitForm } from '../screens/HabitForm';
 import { HabitDetail } from '../screens/HabitDetail';
 
@@ -44,7 +45,9 @@ export function useHabitActions(date?: string) {
   const startTimer = useCallback(
     (h: Habit) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      router.push({ pathname: '/timer', params: { habitId: String(h.id), date: day } });
+      // Avoid habits weigh it first ("How heavy does this feel right now?"), then the timer.
+      const avoid = h.kind === 'habit' && h.habit_kind === 'avoid';
+      router.push({ pathname: avoid ? '/weigh' : '/timer', params: { habitId: String(h.id), date: day } });
     },
     [day],
   );
@@ -152,7 +155,16 @@ export function useHabitActions(date?: string) {
 
   const overlays = (
     <>
-      {afterPrompt && promptHabit && (
+      {afterPrompt && promptHabit && afterPrompt.avoid && (
+        <AvoidAfterCard
+          key={`${afterPrompt.habitId}-${afterPrompt.date}-avoid`}
+          habit={promptHabit}
+          date={afterPrompt.date}
+          autoDismiss={settings.feelingAutoDismiss}
+          onDismiss={dismissPrompt}
+        />
+      )}
+      {afterPrompt && promptHabit && !afterPrompt.avoid && (
         <FeelingPicker
           key={`${afterPrompt.habitId}-${afterPrompt.date}-${afterPrompt.reason}`}
           title={

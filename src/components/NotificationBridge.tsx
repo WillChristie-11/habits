@@ -53,8 +53,10 @@ export function NotificationBridge() {
       else if (r.action === 'ready') {
         router.push({ pathname: '/ready', params: { habitId: String(r.habitId), date: r.date } });
       } else if (r.action === 'start') {
-        // Opens the app on the timer; the timer records the start.
-        router.push({ pathname: '/timer', params: { habitId: String(r.habitId), date: r.date } });
+        // Opens the app on Weigh it (avoid habits) or the timer; the timer records the start.
+        const h = s.habits.find((x) => x.id === r.habitId);
+        const avoid = h?.kind === 'habit' && h.habit_kind === 'avoid';
+        router.push({ pathname: avoid ? '/weigh' : '/timer', params: { habitId: String(r.habitId), date: r.date } });
       }
     };
     return listenForResponses((r) => {

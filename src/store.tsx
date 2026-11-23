@@ -38,6 +38,8 @@ export interface AfterPrompt {
   note: boolean;
   /** 'skip' asks how the day feels rather than how the habit felt */
   reason: 'done' | 'skip';
+  /** An avoid session just ended: ask "How heavy was it actually?" (+ the line and keep toggle). */
+  avoid?: boolean;
 }
 
 interface Store {
@@ -89,7 +91,11 @@ interface Store {
    * Begin a timed session. Avoid habits count as done the moment a session starts, so the
    * record is written now (with the session in its meta).
    */
-  startSession(h: Habit, date?: string): Promise<void>;
+  startSession(h: Habit, date?: string, extra?: Meta | null): Promise<void>;
+  /** Merge fields into a day's record meta (keeps what's there: session, note, …). */
+  mergeMeta(habitId: number, date: string, patch: Meta): Promise<void>;
+  /** Replace a habit's ladder and next-step index (Make it smaller). */
+  setLadder(h: Habit, ladder: string[], index: number): Promise<void>;
   /** Finish a session: want habits are marked done now. */
   finishSession(h: Habit, date?: string): Promise<void>;
   advanceLadder(h: Habit): Promise<void>;
@@ -219,6 +225,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await db.deleteOccurrence(id);
         await reload();
       },
+      async mergeMeta(habitId, date, patch) {
+        await db.mergeRecordMeta(habitId, date, patch);
+        await reload();
+      },
+      async setLadder(h, ladder, index) {
+        await db.setLadder(h.id, ladder, Math.max(0, Math.min(index, ladder.length)));
+        await reload();
+      },
       async setNote(habitId, date, text) {
         const existing = records.find((r) => r.habit_id === habitId && r.date === date);
         if (!existing) return;
@@ -279,10 +293,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setSettings((s) => ({ ...s, reminders: next }));
         await db.saveSetting('reminders', JSON.stringify(next));
       },
-      async startSession(h, date = today) {
+      async startSession(h, date = today, extra = null) {
         if (h.kind !== 'habit' || h.habit_kind !== 'avoid') return;
         const step = h.ladder[h.ladder_index] ?? null;
         await db.setRecord(h.id, date, 'done', null, {
+          ...(extra ?? {}),
           session: { startedAt: new Date().toISOString(), minutes: h.session_minutes, step },
         });
         await reload();

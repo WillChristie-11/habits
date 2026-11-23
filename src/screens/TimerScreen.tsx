@@ -26,12 +26,14 @@ export function TimerScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const params = useLocalSearchParams<{ habitId: string; date?: string }>();
+  // dread: "How heavy does this feel right now?" from Weigh it (avoid habits), saved on the session.
+  const params = useLocalSearchParams<{ habitId: string; date?: string; dread?: string }>();
   const { habits, ctx, startSession, finishSession, advanceLadder, setAfterPrompt } = useStore();
   const habit = habits.find((h) => h.id === Number(params.habitId));
   const date = params.date ?? ctx.today;
 
   const [keepGoing, setKeepGoing] = useState(false);
+  const asked = useRef(false);
   const total = (habit?.session_minutes ?? 15) * 60_000;
   // The end time is saved, so reopening the app (even after iOS closed it) resumes the session.
   const timer = useEndTime(
@@ -48,9 +50,10 @@ export function TimerScreen() {
     if (!habit || started.current) return;
     started.current = true;
     if (timer.endsAt != null) return;
-    startSession(habit, date);
+    const dread = Number(params.dread);
+    startSession(habit, date, dread >= 1 && dread <= 5 ? { dreadBefore: dread } : null);
     timer.start(total);
-  }, [habit, date, startSession, total, timer]);
+  }, [habit, date, startSession, total, timer, params.dread]);
 
   const buzzed = useRef(false);
   useEffect(() => {
@@ -74,8 +77,17 @@ export function TimerScreen() {
   const step = habit.ladder[habit.ladder_index] ?? null;
   const nextStep = habit.ladder[habit.ladder_index + 1] ?? null;
 
+  const avoid = habit.habit_kind === 'avoid';
+  // An avoid session ends (Finish, or closing it: stopping counts) → "How heavy was it actually?"
+  const askAvoid = () => {
+    if (!avoid || asked.current) return;
+    asked.current = true;
+    setAfterPrompt({ habitId: habit.id, date, feelings: false, note: true, reason: 'done', avoid: true });
+  };
+
   const close = () => {
     timer.clear();
+    askAvoid();
     router.back();
   };
 
@@ -83,7 +95,8 @@ export function TimerScreen() {
     await finishSession(habit, date);
     // A finished session gets the same card as a check-off (want: feeling; ask_note: one line).
     const wantFeeling = habit.habit_kind === 'want';
-    if (wantFeeling || habit.ask_note)
+    if (avoid) askAvoid();
+    else if (wantFeeling || habit.ask_note)
       setAfterPrompt({ habitId: habit.id, date, feelings: wantFeeling, note: habit.ask_note, reason: 'done' });
     if (!step) return close();
     Alert.alert(

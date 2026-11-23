@@ -472,6 +472,16 @@ export async function setRecord(
   );
 }
 
+export async function setLadder(habitId: number, ladder: string[], index: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE habits SET ladder = ?, ladder_index = ? WHERE id = ?',
+    JSON.stringify(ladder),
+    index,
+    habitId,
+  );
+}
+
 export async function setLadderIndex(habitId: number, index: number): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE habits SET ladder_index = ? WHERE id = ?', index, habitId);
@@ -610,6 +620,31 @@ export async function saveWeek(weekStart: string, intention: string): Promise<vo
 }
 
 /** Replace a record's meta (an activity log's amount). */
+// Meta merges run one at a time (read the stored meta, then write), so quick saves can't race.
+let metaQueue: Promise<void> = Promise.resolve();
+
+/** Merge fields into a record's meta, reading the stored meta first. */
+export function mergeRecordMeta(habitId: number, date: string, patch: Meta): Promise<void> {
+  const run = metaQueue.then(async () => {
+    const db = await getDb();
+    const row = await db.getFirstAsync<{ meta: string | null }>(
+      'SELECT meta FROM records WHERE habit_id = ? AND date = ?',
+      habitId,
+      date,
+    );
+    if (!row) return;
+    const merged = { ...(parseMeta(row.meta) ?? {}), ...patch };
+    await db.runAsync(
+      'UPDATE records SET meta = ? WHERE habit_id = ? AND date = ?',
+      JSON.stringify(merged),
+      habitId,
+      date,
+    );
+  });
+  metaQueue = run.catch(() => {});
+  return run;
+}
+
 export async function setRecordMeta(habitId: number, date: string, meta: Meta | null): Promise<void> {
   const db = await getDb();
   await db.runAsync(

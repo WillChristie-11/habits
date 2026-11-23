@@ -91,3 +91,63 @@ export function wakeWeek(anchor: Habit | null, idx: RecordIndex, days: string[])
 }
 
 export const minutesOfDay = toMin;
+
+// --- Expected vs felt (avoid sessions) ---------------------------------------------------------
+
+/** The 1–5 scale used before ("How heavy does this feel right now?") and after an avoid session. */
+export const HEAVINESS = ['Easy', 'Light', 'Meh', 'Heavy', 'Dread'] as const;
+
+export type FeltVs = 'lighter' | 'same' | 'heavier';
+
+/** Worked out, never stored: how the session felt compared with how heavy it looked before. */
+export function feltVs(dreadBefore: number, feltScore: number): FeltVs {
+  return feltScore < dreadBefore ? 'lighter' : feltScore > dreadBefore ? 'heavier' : 'same';
+}
+
+const score = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5 ? v : null;
+
+export interface ExpectedFelt {
+  date: string;
+  expected: number;
+  felt: number;
+}
+
+/**
+ * Sessions with both numbers (meta.dreadBefore and meta.feltScore), oldest first, the last `n`.
+ * `latest` drives "Expected 4, felt like 2"; `lighter` counts sessions that felt lighter than
+ * expected (used later by the Dread vs reality nudge). Never shown as a count or % for the habit.
+ */
+export function expectedVsFelt(h: Pick<Habit, 'id'>, idx: RecordIndex, n = 9) {
+  const recs = idx.get(h.id);
+  const all: ExpectedFelt[] = [];
+  if (recs) {
+    for (const r of recs.values()) {
+      const expected = score(r.meta?.dreadBefore);
+      const felt = score(r.meta?.feltScore);
+      if (expected != null && felt != null) all.push({ date: r.date, expected, felt });
+    }
+  }
+  all.sort((a, b) => a.date.localeCompare(b.date));
+  const pairs = all.slice(-n);
+  return {
+    pairs,
+    latest: pairs[pairs.length - 1] ?? null,
+    lighter: pairs.filter((p) => p.felt < p.expected).length,
+    rated: pairs.length,
+  };
+}
+
+/** "Expected 4, felt like 2" */
+export const expectedFeltText = (p: Pick<ExpectedFelt, 'expected' | 'felt'>) =>
+  `Expected ${p.expected}, felt like ${p.felt}`;
+
+/** Lines you asked to be reminded of on a hard day (meta.keepLine with a note), newest first. */
+export function keptLines(h: Pick<Habit, 'id'>, idx: RecordIndex): { date: string; text: string }[] {
+  const recs = idx.get(h.id);
+  if (!recs) return [];
+  return [...recs.values()]
+    .filter((r) => r.meta?.keepLine === true && typeof r.meta?.note === 'string' && r.meta.note.trim())
+    .map((r) => ({ date: r.date, text: String(r.meta!.note).trim() }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
