@@ -97,15 +97,6 @@ export function useHabitActions(date?: string) {
 
   const openForm = useCallback((habit: Habit | null, kind: ItemKind = 'habit') => setForm({ habit, kind }), []);
 
-  /** The "Get ready" transition countdown before an item. */
-  const getReady = useCallback(
-    (h: Habit) => {
-      Haptics.selectionAsync().catch(() => {});
-      router.push({ pathname: '/ready', params: { habitId: String(h.id), date: day } });
-    },
-    [day],
-  );
-
   /** The header's ＋: Habit / Anchor / Activity. */
   const openChooser = useCallback(() => {
     const kinds: ItemKind[] = ['habit', 'anchor', 'activity'];
@@ -135,7 +126,7 @@ export function useHabitActions(date?: string) {
 
   const onDelete = useCallback((h: Habit) => removeHabit(h.id), [removeHabit]);
 
-  /** Swipe right on a row: Skip (or Undo skip) and Get ready; anchors also get Edit. */
+  /** Swipe right on a row: Edit and Skip (or Undo skip). */
   const swipeActions = useCallback(
     (h: Habit): SwipeAction[] => {
       const skipped = stateOn(h, idx, day, ctx) === 'skipped';
@@ -151,13 +142,12 @@ export function useHabitActions(date?: string) {
           },
         },
       ];
-      if (isToday) out.push({ label: 'Get ready', tone: 'accent', onPress: () => getReady(h) });
       const linked = linkedTimer(h.meta);
       if (isToday && linked)
         out.push({ label: `Start ${settings.timerPrefs[linked]} min`, onPress: () => startTimer(h) });
       return out;
     },
-    [idx, ctx, day, isToday, unmark, skip, getReady, startTimer, settings.timerPrefs],
+    [idx, ctx, day, isToday, unmark, skip, startTimer, settings.timerPrefs],
   );
 
   const dismissPrompt = useCallback(() => setAfterPrompt(null), [setAfterPrompt]);
@@ -208,10 +198,6 @@ export function useHabitActions(date?: string) {
           setDetail(null);
           setTimeout(() => startTimer(h), 350);
         }}
-        onReady={(h) => {
-          setDetail(null);
-          setTimeout(() => getReady(h), 350);
-        }}
         onDone={(h) => {
           setDetail(null);
           onToggle(h, 'pending');
@@ -230,5 +216,5 @@ export function useHabitActions(date?: string) {
     </>
   );
 
-  return { onToggle, onOpen, onDelete, swipeActions, skip, openForm, openChooser, startTimer, getReady, overlays };
+  return { onToggle, onOpen, onDelete, swipeActions, skip, openForm, openChooser, startTimer, overlays };
 }

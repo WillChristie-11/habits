@@ -33,6 +33,3 @@ export function defaultAnchors(): HabitInput[] {
   });
   return [anchor('Wake up', '07:00', null), anchor('Work block', '09:00', '17:00'), anchor('Wind down', '21:30', null)];
 }
-
-/** "Get ready" countdown lengths offered per item, in minutes. */
-export const READY_OPTIONS = [1, 3, 5, 10] as const;

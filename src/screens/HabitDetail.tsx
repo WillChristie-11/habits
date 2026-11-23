@@ -17,7 +17,6 @@ interface Props {
   onClose(): void;
   onEdit(h: Habit): void;
   onStart(h: Habit): void;
-  onReady(h: Habit): void;
   /** Check it off (the motivation sheet's "Did the minimum ✓" lives here now). */
   onDone(h: Habit): void;
   onSkip(h: Habit): void;
@@ -31,21 +30,13 @@ const LEGEND: { state: DayState; label: string }[] = [
   { state: 'none', label: 'Not due' },
 ];
 
-export function HabitDetail({ habit, onClose, onEdit, onStart, onReady, onDone, onSkip }: Props) {
+export function HabitDetail({ habit, onClose, onEdit, onStart, onDone, onSkip }: Props) {
   const styles = useThemedStyles(makeStyles);
   return (
     <Modal visible={!!habit} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.screen}>
         {habit && (
-          <Body
-            habit={habit}
-            onClose={onClose}
-            onEdit={onEdit}
-            onStart={onStart}
-            onReady={onReady}
-            onDone={onDone}
-            onSkip={onSkip}
-          />
+          <Body habit={habit} onClose={onClose} onEdit={onEdit} onStart={onStart} onDone={onDone} onSkip={onSkip} />
         )}
       </View>
     </Modal>
@@ -57,7 +48,6 @@ function Body({
   onClose,
   onEdit,
   onStart,
-  onReady,
   onDone,
   onSkip,
 }: {
@@ -65,7 +55,6 @@ function Body({
   onClose(): void;
   onEdit(h: Habit): void;
   onStart(h: Habit): void;
-  onReady(h: Habit): void;
   onDone(h: Habit): void;
   onSkip(h: Habit): void;
 }) {
@@ -229,9 +218,6 @@ function Body({
               title={`Start ${linked ? settings.timerPrefs[linked] : h.session_minutes} min`}
               onPress={() => onStart(h)}
             />
-          )}
-          {todayState !== 'paused' && todayState !== 'done' && (
-            <Button kind="secondary" title={`Get ready (${h.ready_minutes} min)`} onPress={() => onReady(h)} />
           )}
           {todayState === 'skipped' ? (
             <Button kind="secondary" title="Undo skip" onPress={() => unmark(h.id)} />

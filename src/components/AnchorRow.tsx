@@ -71,7 +71,7 @@ export function AnchorRow({ anchor, state, focus, showTime, onToggle }: Props) {
       accessibilityRole="button"
       accessibilityState={{ checked: done }}
       accessibilityLabel={`${anchor.name}${done ? ', done' : ''}`}
-      accessibilityHint="Tap to mark done. Swipe for Skip, Get ready, Edit or Delete."
+      accessibilityHint="Tap to mark done. Swipe for Edit, Skip or Delete."
     >
       <Animated.View
         pointerEvents="none"

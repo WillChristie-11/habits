@@ -15,7 +15,7 @@ interface Props {
   name: string;
   /** Swipe left → red Delete → confirm. */
   onDelete(): void;
-  /** Swipe right → these buttons (Skip, Get ready, …). */
+  /** Swipe right → these buttons (Edit, Skip). */
   actions: SwipeAction[];
   children: React.ReactNode;
   /** Bottom gap of the row inside, so the action buttons line up with it. */

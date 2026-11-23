@@ -10,7 +10,6 @@ import { WEEKDAY_NAMES } from '../lib/dates';
 import { requestPermission } from '../lib/notifications';
 import { suggestPlanWhen } from '../lib/reminders';
 import { MessageList } from '../components/MessageList';
-import { READY_OPTIONS } from '../lib/defaults';
 import { StepList } from '../components/StepList';
 import { tileColors, useTheme, useThemedStyles, type Theme } from '../theme';
 import { ACTIVITY_ICONS, ActivityIcon, activityLook, type ActivityIconName } from '../components/ActivityIcon';
@@ -74,7 +73,8 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [messages, setMessages] = useState<string[]>(habit?.messages ?? []);
   const [habitKind, setHabitKind] = useState<HabitKind>(habit?.habit_kind ?? 'want');
   const [sessionMin, setSessionMin] = useState(habit?.session_minutes ?? 15);
-  const [readyMin, setReadyMin] = useState(habit?.ready_minutes ?? 3);
+  // Get ready was removed; the stored length is kept as it is.
+  const readyMin = habit?.ready_minutes ?? 3;
   const [ladder, setLadder] = useState<string[]>(habit?.ladder ?? []);
   const [ladderIndex, setLadderIndex] = useState(habit?.ladder_index ?? 0);
   const [pairWith, setPairWith] = useState(habit?.pair_with ?? '');
@@ -235,20 +235,6 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
     </View>
   );
 
-  const readyFields = (
-    <>
-      <Label>Get ready</Label>
-      <View style={s.chips}>
-        {READY_OPTIONS.map((m) => (
-          <Chip key={m} label={`${m} min`} active={readyMin === m} onPress={() => setReadyMin(m)} />
-        ))}
-      </View>
-      <View style={{ marginTop: 8 }}>
-        <Help>A short countdown to wrap up what you’re doing first. Long-press the item, or use the reminder.</Help>
-      </View>
-    </>
-  );
-
   const dayChips = (
     <View style={s.chips}>
       {MON_FIRST.map((d) => (
@@ -265,7 +251,6 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   // How many of the "More options" are already in use (shown on the collapsed row).
   const moreSet = [
     scheduled && reminder,
-    readyMin !== 3,
     (plain || isAnchor) && askNote,
     plain && timerLink != null,
     isHabit && afterHabit,
@@ -567,7 +552,6 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
                     {reminderFields}
                   </>
                 )}
-                {readyFields}
 
                 {plain && (
                   <>

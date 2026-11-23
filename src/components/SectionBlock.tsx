@@ -24,7 +24,7 @@ interface Props {
   nested?: boolean;
 }
 
-/** A group on Today: header, then rows you can swipe (Skip / Get ready, Delete) and long-press to drag. */
+/** A group on Today: header, then rows you can swipe (Edit / Skip, Delete) and long-press to drag. */
 export function SectionBlock({
   title,
   head,

@@ -34,7 +34,6 @@ function ThemedStack() {
         <Stack.Screen name="focus" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="meditate" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="weigh" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
-        <Stack.Screen name="ready" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="timer" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
       </Stack>
     </>

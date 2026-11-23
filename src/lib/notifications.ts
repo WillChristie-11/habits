@@ -8,9 +8,6 @@ export const ACTION_DONE = 'done';
 export const ACTION_LATER = 'later';
 export const ACTION_SKIP = 'skip';
 export const ACTION_START = 'start';
-export const ACTION_READY = 'ready';
-/** Opens the app on the "Get ready" countdown. */
-const READY_BUTTON = { identifier: ACTION_READY, buttonTitle: 'Get ready', options: { opensAppToForeground: true } };
 const TIMER_PREFIX = 'timer-';
 /** Scheduled outside the planner (timers, cut-back follow-ups); re-planning leaves them alone. */
 const FOLLOW_PREFIX = 'follow-';
@@ -38,7 +35,6 @@ async function ensureStartCategories(plan: PlannedNotification[]) {
       await Notifications.setNotificationCategoryAsync(`habit-start-${n}`, [
         // Starting opens the app to the timer.
         { identifier: ACTION_START, buttonTitle: `Start ${n} min`, options: { opensAppToForeground: true } },
-        READY_BUTTON,
         { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
         { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
       ]);
@@ -124,7 +120,6 @@ export async function initNotifications() {
   try {
     await Notifications.setNotificationCategoryAsync(ITEM_CATEGORY, [
       { identifier: ACTION_DONE, buttonTitle: 'Done', options: { opensAppToForeground: false } },
-      READY_BUTTON,
       { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
       { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
     ]);
@@ -208,7 +203,7 @@ export function syncNotifications(plan: PlannedNotification[]): Promise<void> {
 export interface ItemResponse {
   /** unique per tap, for de-duplication */
   key: string;
-  action: 'done' | 'later' | 'skip' | 'start' | 'ready' | 'feel' | 'note' | 'open';
+  action: 'done' | 'later' | 'skip' | 'start' | 'feel' | 'note' | 'open';
   habitId: number | null;
   date: string | null;
   /** what the notification was: item / morning / evening / timer / follow / wait */
@@ -244,9 +239,7 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
             ? 'skip'
             : a === ACTION_START
               ? 'start'
-              : a === ACTION_READY
-                ? 'ready'
-                : 'open';
+              : 'open';
   return {
     key: `${r.notification.request.identifier}|${r.notification.date}|${a}`,
     action,
