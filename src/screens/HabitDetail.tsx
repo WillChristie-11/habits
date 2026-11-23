@@ -10,13 +10,13 @@ import { useThemedStyles, type Theme } from '../theme';
 import { formatTime } from '../components/TimeField';
 import { ifThenLine, obstacleLine, pickMessage } from '../lib/reminders';
 import { feelingContrast } from '../lib/insights';
-import { linkedTimer } from '../lib/timers';
+import { habitTimerButtons } from '../lib/timers';
 
 interface Props {
   habit: Habit | null;
   onClose(): void;
   onEdit(h: Habit): void;
-  onStart(h: Habit): void;
+  onStart(h: Habit, which: 0 | 1): void;
   /** Check it off (the motivation sheet's "Did the minimum ✓" lives here now). */
   onDone(h: Habit): void;
   onSkip(h: Habit): void;
@@ -54,7 +54,7 @@ function Body({
   habit: Habit;
   onClose(): void;
   onEdit(h: Habit): void;
-  onStart(h: Habit): void;
+  onStart(h: Habit, which: 0 | 1): void;
   onDone(h: Habit): void;
   onSkip(h: Habit): void;
 }) {
@@ -72,8 +72,8 @@ function Body({
   // A rotating line besides the why (which has its own card).
   const message = pickMessage({ ...h, why: null }, ctx.today, settings.reminders.messages);
   const avoid = h.habit_kind === 'avoid';
-  // Linked to Focus / Meditate: Start opens that timer at its chosen length.
-  const linked = linkedTimer(h.meta);
+  // Focus · 25 and Clear head · 5 (Meditate · 10 and Focus · 25 for a meditation habit).
+  const [mainTimer, secondTimer] = habitTimerButtons(h);
 
   return (
     <View style={{ flex: 1 }}>
@@ -213,11 +213,18 @@ function Body({
             <Button title={h.minimum_version ? 'Did the minimum ✓' : 'Done ✓'} onPress={() => onDone(h)} />
           )}
           {todayState !== 'paused' && (
-            <Button
-              kind={pending && !avoid ? 'secondary' : 'primary'}
-              title={`Start ${linked ? settings.timerPrefs[linked] : h.session_minutes} min`}
-              onPress={() => onStart(h)}
-            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  kind={pending && !avoid ? 'secondary' : 'primary'}
+                  title={mainTimer.label}
+                  onPress={() => onStart(h, 0)}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button kind="secondary" title={secondTimer.label} onPress={() => onStart(h, 1)} />
+              </View>
+            </View>
           )}
           {todayState === 'skipped' ? (
             <Button kind="secondary" title="Undo skip" onPress={() => unmark(h.id)} />

@@ -56,10 +56,8 @@ export function NotificationBridge() {
       else if (r.action === 'skip') await s.mark(r.habitId, 'skipped', r.date);
       else if (r.action === 'later') await s.snooze(r.habitId, r.date);
       else if (r.action === 'start') {
-        // Opens the app on Weigh it (avoid habits) or the timer; the timer records the start.
-        const h = s.habits.find((x) => x.id === r.habitId);
-        const avoid = h?.kind === 'habit' && h.habit_kind === 'avoid';
-        router.push({ pathname: avoid ? '/weigh' : '/timer', params: { habitId: String(r.habitId), date: r.date } });
+        // Focus 25: opens "How heavy does this feel?" (avoid habits), which starts the round.
+        router.push({ pathname: '/weigh', params: { habitId: String(r.habitId), date: r.date } });
       }
     };
     return listenForResponses((r) => {

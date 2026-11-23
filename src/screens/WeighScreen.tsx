@@ -5,6 +5,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
 import { HEAVINESS } from '../lib/insights';
+import { FROM_HABIT } from '../lib/timers';
+import { useTimerStart } from '../components/useTimerStart';
 import { Button } from '../components/ui';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
 
@@ -18,9 +20,9 @@ export function WeighScreen() {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   const params = useLocalSearchParams<{ habitId: string; date?: string }>();
-  const { habits, ctx, setLadder } = useStore();
+  const { habits, setLadder } = useStore();
   const habit = habits.find((h) => h.id === Number(params.habitId));
-  const date = params.date ?? ctx.today;
+  const timerStart = useTimerStart();
   const [dread, setDread] = useState<number | null>(null);
   const [asking, setAsking] = useState(false);
   const [smaller, setSmaller] = useState('');
@@ -57,10 +59,8 @@ export function WeighScreen() {
 
   const start = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    router.replace({
-      pathname: '/timer',
-      params: { habitId: String(habit.id), date, ...(dread != null ? { dread: String(dread) } : {}) },
-    });
+    // The Focus round is the session: it counts the moment it starts.
+    timerStart('focus', FROM_HABIT.focus, habit.id, { dread, replace: true });
   };
 
   return (
@@ -99,7 +99,7 @@ export function WeighScreen() {
 
         <View style={s.card}>
           <Text style={s.cardLabel}>The only step</Text>
-          <Text style={s.step}>{step ?? `${habit.session_minutes} min of ${habit.name.toLowerCase()}`}</Text>
+          <Text style={s.step}>{step ?? `Focus ${FROM_HABIT.focus} on ${habit.name.toLowerCase()}`}</Text>
           {asking ? (
             <View style={{ gap: 8, marginTop: 10 }}>
               <Text style={s.ask}>What’s a smaller first move?</Text>
@@ -135,7 +135,7 @@ export function WeighScreen() {
         {habit.pair_with && <Text style={s.pair}>with {habit.pair_with}</Text>}
       </ScrollView>
 
-      <Button title={`Start ${habit.session_minutes} min`} onPress={start} />
+      <Button title={`Focus · ${FROM_HABIT.focus}`} onPress={start} />
     </View>
   );
 }

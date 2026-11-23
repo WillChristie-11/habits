@@ -10,6 +10,7 @@ import { DEFAULT_MINUTES, clock, meditateTint } from '../lib/timers';
 import { useEndTime } from '../components/useEndTime';
 import { TimerVideo } from '../components/TimerVideo';
 import { FeelingPicker } from '../components/FeelingPicker';
+import { useHabitTimer } from '../components/useHabitTimer';
 import { timerColors } from '../theme';
 
 const PEEK_MS = 3000;
@@ -23,13 +24,16 @@ const light = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch
  */
 export function MeditateScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ startId?: string; minutes?: string; habitId?: string }>();
+  const params = useLocalSearchParams<{ startId?: string; minutes?: string; habitId?: string; clear?: string }>();
   const { settings, updateSettings, habits, idx, ctx, mark, rateFeeling } = useStore();
   const active = settings.activeTimer?.kind === 'meditate' ? settings.activeTimer : null;
   const timer = useEndTime('meditate', null);
   const [peek, setPeek] = useState(false);
   const [feeling, setFeeling] = useState(false);
   const habit = active?.habitId != null ? habits.find((h) => h.id === active.habitId) : undefined;
+  // Clear head (Meditate before a habit's task): never checks it off; ends with "Ready? Focus on …".
+  const clearHead = !!active?.clearHead;
+  const habitTimer = useHabitTimer();
 
   // A new start; reopening resumes.
   const begun = useRef(false);
@@ -46,6 +50,7 @@ export function MeditateScreen() {
       line: '',
       startedAt: new Date().toISOString(),
       startId: params.startId,
+      ...(params.clear ? { clearHead: true } : {}),
     };
     updateSettings({ activeTimer: next });
     timer.start(minutes * 60_000, { title: `${minutes} minutes. Done.`, body: 'Meditate', when: 'background' });
@@ -73,7 +78,7 @@ export function MeditateScreen() {
     if (!active || active.phase !== 'focus' || !timer.ended) return;
     updateSettings({ activeTimer: { ...active, phase: 'focusDone' } });
     [0, 450, 900].forEach((ms) => setTimeout(light, ms));
-    if (habit && stateOn(habit, idx, ctx.today, ctx) !== 'done')
+    if (habit && !active.clearHead && stateOn(habit, idx, ctx.today, ctx) !== 'done')
       mark(habit.id, 'done', ctx.today).then(() => setFeeling(true));
     // on the end only
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,12 +97,21 @@ export function MeditateScreen() {
     else router.replace('/');
   };
   const close = () => {
-    if (!active || ended || !habit || stateOn(habit, idx, ctx.today, ctx) === 'done') return end();
+    if (!active || ended || !habit || clearHead || stateOn(habit, idx, ctx.today, ctx) === 'done') return end();
     // Stopping early on a linked habit: it's your call whether it counts.
     Alert.alert('Count it anyway?', `${habit.name} for ${Math.max(1, Math.round((total - left) / 60_000))} min`, [
       { text: 'Not this time', style: 'cancel', onPress: end },
       { text: 'Count it', onPress: () => mark(habit.id, 'done', ctx.today).then(end) },
     ]);
+  };
+
+  // Clear head done: straight on to Focus for the habit (via the heavy question for avoid habits).
+  const focusNow = () => {
+    if (!habit) return end();
+    timer.clear();
+    updateSettings({ activeTimer: null });
+    // A habit with Clear head has Focus as its main timer.
+    habitTimer(habit, 0, { replace: true, force: true });
   };
 
   if (!active) {
@@ -135,10 +149,23 @@ export function MeditateScreen() {
           <Text style={s.peekText}>{ended ? 'Done' : clock(left)}</Text>
         </View>
       )}
-      <View style={[s.bottom, { paddingBottom: insets.bottom + 28 }]} pointerEvents="none">
-        <Text style={s.title}>Meditate</Text>
-        <Text style={s.hint}>{ended ? 'Tap ✕ when you’re ready' : 'Tap anywhere to see time left'}</Text>
-      </View>
+      {!(ended && clearHead && habit) && (
+        <View style={[s.bottom, { paddingBottom: insets.bottom + 28 }]} pointerEvents="none">
+          <Text style={s.title}>{clearHead ? 'Clear head' : 'Meditate'}</Text>
+          <Text style={s.hint}>{ended ? 'Tap ✕ when you’re ready' : 'Tap anywhere to see time left'}</Text>
+        </View>
+      )}
+      {ended && clearHead && habit && (
+        <View style={[s.ready, { paddingBottom: insets.bottom + 24 }]}>
+          <Text style={s.readyTitle}>Ready? Focus on {habit.name}</Text>
+          <Pressable onPress={focusNow} style={[s.readyBtn, s.readyPrimary]} accessibilityRole="button">
+            <Text style={[s.readyText, s.readyPrimaryText]}>Focus · 25</Text>
+          </Pressable>
+          <Pressable onPress={end} style={s.readyBtn} accessibilityRole="button">
+            <Text style={s.readyText}>Not now</Text>
+          </Pressable>
+        </View>
+      )}
       {feeling && habit && (
         <FeelingPicker
           title={`How do you feel after ${habit.name}?`}
@@ -164,4 +191,10 @@ const s = StyleSheet.create({
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', gap: 4 },
   title: { color: timerColors.onVideo, fontSize: 24, fontWeight: '700' },
   hint: { color: timerColors.onVideoMuted, fontSize: 14 },
+  ready: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 24, gap: 10 },
+  readyTitle: { color: timerColors.onVideo, fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 6 },
+  readyBtn: { alignItems: 'center', paddingVertical: 14, borderRadius: 14, backgroundColor: timerColors.chip },
+  readyPrimary: { backgroundColor: timerColors.onVideo },
+  readyText: { color: timerColors.onVideo, fontSize: 16, fontWeight: '600' },
+  readyPrimaryText: { color: timerColors.meditateShade },
 });

@@ -38,3 +38,26 @@ test('linked timer comes from the habit meta', async () => {
   assert.equal(linkedTimer({ timer: 'nap' }), null);
   assert.equal(linkedTimer(null), null);
 });
+
+test('habit timer buttons: Focus · 25 and Clear head · 5; meditation habits lead with Meditate · 10', async () => {
+  const { habitTimerButtons, isMeditateHabit } = await import('./timers');
+  const plain = habitTimerButtons({ name: 'Apply to jobs', meta: null });
+  assert.deepEqual(
+    plain.map((b) => [b.kind, b.minutes, b.label, b.clearHead]),
+    [
+      ['focus', 25, 'Focus · 25', false],
+      ['meditate', 5, 'Clear head · 5', true],
+    ],
+  );
+  assert.ok(isMeditateHabit({ name: 'Morning Meditation' }));
+  assert.ok(isMeditateHabit({ name: 'Sit', meta: { timer: 'meditate' } }));
+  assert.ok(!isMeditateHabit({ name: 'Sit', meta: { timer: 'focus' } }));
+  const med = habitTimerButtons({ name: 'Meditate', meta: null });
+  assert.deepEqual(
+    med.map((b) => [b.kind, b.minutes, b.label, b.clearHead]),
+    [
+      ['meditate', 10, 'Meditate · 10', false],
+      ['focus', 25, 'Focus · 25', false],
+    ],
+  );
+});

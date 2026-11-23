@@ -1,4 +1,5 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
+import { FROM_HABIT } from './timers';
 import type { CheckinSettings, Habit, ReminderSettings } from '../types';
 import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from './dates';
 import {
@@ -27,14 +28,14 @@ export const isAvoid = (h: Habit) => h.kind === 'habit' && h.habit_kind === 'avo
 const wanted = (h: Habit) => tracked(h) && !isAvoid(h);
 
 /**
- * How an avoid habit is always worded: the time box and the next ladder step.
- * "15 min: Tailor 1 bullet" · no ladder → "15 min of Apply to jobs" ·
- * with "pair with" → "good coffee + 15 min: Tailor 1 bullet?"
- * `style: 'of'` forces the "15 min of <habit>" form (evening nudge).
+ * How an avoid habit is always worded: a Focus round and the next ladder step.
+ * "Focus 25: Tailor 1 bullet" · no ladder → "Focus 25 on Apply to jobs" ·
+ * with "pair with" → "good coffee + Focus 25: Tailor 1 bullet?"
+ * `style: 'of'` forces the "Focus 25 on <habit>" form (evening nudge).
  */
 export function avoidLine(h: Habit, style: 'step' | 'of' = 'step'): string {
   const step = style === 'step' ? h.ladder[h.ladder_index] : undefined;
-  const box = step ? `${h.session_minutes} min: ${step}` : `${h.session_minutes} min of ${h.name}`;
+  const box = step ? `Focus ${FROM_HABIT.focus}: ${step}` : `Focus ${FROM_HABIT.focus} on ${h.name}`;
   return h.pair_with ? `${h.pair_with} + ${box}?` : box;
 }
 
@@ -241,9 +242,9 @@ export interface PlannedNotification {
   data: { type: 'item' | 'morning' | 'evening'; habitId?: number; date: string };
 }
 
-/** Avoid habits get a "Start N min" button instead of "Done". */
+/** Avoid habits get a "Focus 25" button instead of "Done". */
 export const itemCategory = (h: Habit) =>
-  h.kind === 'habit' && h.habit_kind === 'avoid' ? `start-${h.session_minutes}` : 'item';
+  h.kind === 'habit' && h.habit_kind === 'avoid' ? `start-${FROM_HABIT.focus}` : 'item';
 
 const withLine = (text: string, line: string | null) => (line ? `${text}\n${line}` : text);
 

@@ -3,11 +3,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useStore } from '../store';
 import { avoidLine, banners, paceText } from '../lib/reminders';
 import type { Habit } from '../types';
+import { FROM_HABIT } from '../lib/timers';
 import { formatDuration, formatTime } from '../lib/dates';
 import { status, useThemedStyles, type Theme } from '../theme';
 
 /** Morning reminder, evening nudge (red after the deadline) and behind-pace warnings. */
-/** One avoid habit: "15 min: next step" with a Start button. */
+/** One avoid habit: "Focus 25: next step" with a Focus · 25 button. */
 function AvoidLine({ h, style, onStart }: { h: Habit; style: 'step' | 'of'; onStart(h: Habit): void }) {
   const s = useThemedStyles(makeStyles);
   return (
@@ -16,7 +17,7 @@ function AvoidLine({ h, style, onStart }: { h: Habit; style: 'step' | 'of'; onSt
         {avoidLine(h, style)}
       </Text>
       <Pressable onPress={() => onStart(h)} style={s.startBtn} hitSlop={6} accessibilityRole="button">
-        <Text style={s.startText}>Start {h.session_minutes} min</Text>
+        <Text style={s.startText}>Focus · {FROM_HABIT.focus}</Text>
       </Pressable>
     </View>
   );

@@ -208,7 +208,7 @@ test('motivational messages rotate daily through why, own messages, then the gen
   assert.match(plan.find((p) => p.id.startsWith('evening-'))!.body, /\none page counts$/);
 });
 
-test('avoid habits get a "Start N min" notification button; want habits get Done', () => {
+test('avoid habits get a "Focus 25" notification button; want habits get Done', () => {
   const apply = habit(daily, {
     name: 'Apply',
     habit_kind: 'avoid',
@@ -225,16 +225,16 @@ test('avoid habits get a "Start N min" notification button; want habits get Done
     at('06:00'),
   );
   const cat = (h: Habit) => plan.find((p) => p.id === `item-${h.id}-${TODAY}`)!.category;
-  assert.equal(cat(apply), 'start-20');
+  assert.equal(cat(apply), 'start-25');
   assert.equal(cat(read), 'item');
 });
 
 test('avoid wording: time box + next step, pair-with as a question, "of" form without a ladder', () => {
   const a = habit(daily, { name: 'Apply', habit_kind: 'avoid', ladder: ['Find 1 role', 'Save it'], ladder_index: 1 });
-  assert.equal(avoidLine(a), '15 min: Save it');
-  assert.equal(avoidLine(a, 'of'), '15 min of Apply');
-  assert.equal(avoidLine({ ...a, ladder: [] }), '15 min of Apply');
-  assert.equal(avoidLine({ ...a, pair_with: 'good coffee' }), 'good coffee + 15 min: Save it?');
+  assert.equal(avoidLine(a), 'Focus 25: Save it');
+  assert.equal(avoidLine(a, 'of'), 'Focus 25 on Apply');
+  assert.equal(avoidLine({ ...a, ladder: [] }), 'Focus 25 on Apply');
+  assert.equal(avoidLine({ ...a, pair_with: 'good coffee' }), 'good coffee + Focus 25: Save it?');
 });
 
 test('avoid habits: never counted, flagged or behind pace; own lines in the nudges', () => {
@@ -251,13 +251,13 @@ test('avoid habits: never counted, flagged or behind pace; own lines in the nudg
   const plan = planNotifications([wake, a, w], idx, ctx, R, at('06:00'));
   const evening = plan.find((p) => p.id === `evening-${TODAY}`)!;
   assert.match(evening.title, /^1 left/); // Read only
-  assert.match(evening.body, /^Read ⚑\.\n20 min of Apply$/);
+  assert.match(evening.body, /^Read ⚑\.\nFocus 25 on Apply$/);
   const morning = plan.find((p) => p.id === `morning-${TODAY}`)!;
-  assert.equal(morning.body, '20 min of Apply');
+  assert.equal(morning.body, 'Focus 25 on Apply');
 
   // only avoid habits left → no count at all
   const onlyAvoid = planNotifications([a], idx, ctx, R, at('06:00')).find((p) => p.id === `evening-${TODAY}`)!;
-  assert.equal(onlyAvoid.title, 'Still time for 20 min of Apply');
+  assert.equal(onlyAvoid.title, 'Still time for Focus 25 on Apply');
 
   const b = banners([a, w], idx, ctx, R, at('20:30'));
   const ev = b.find((x) => x.kind === 'evening');
@@ -279,8 +279,8 @@ test('avoid item reminders lead with the time box', () => {
     { ...R, morningEnabled: false, eveningEnabled: false },
     at('06:00'),
   )[0];
-  assert.equal(p.title, '15 min: Find 1 role');
-  assert.equal(p.category, 'start-15');
+  assert.equal(p.title, 'Focus 25: Find 1 role');
+  assert.equal(p.category, 'start-25');
 });
 
 test('if-then plan wording, prefill, and use as the reminder text', () => {
@@ -352,8 +352,8 @@ test('check-ins pick open habits, never-miss-twice and behind-pace first; avoid 
   assert.equal(plan.length, 3);
   assert.equal(plan[0].title, 'Still on track for Read today?');
   assert.equal(plan[0].category, 'item');
-  assert.equal(plan[1].title, '15 min: Find 1 role');
-  assert.equal(plan[1].category, 'start-15');
+  assert.equal(plan[1].title, 'Focus 25: Find 1 role');
+  assert.equal(plan[1].category, 'start-25');
   // nothing open today → no check-ins today
   const none = planNotifications([done], idx, ctx, r, at('06:00')).filter((p) => p.id.startsWith(`checkin-${TODAY}`));
   assert.equal(none.length, 0);

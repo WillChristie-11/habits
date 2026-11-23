@@ -20,6 +20,8 @@ export interface ActiveTimer {
   startedAt: string;
   /** Which start this is (so reopening the screen resumes instead of starting again). */
   startId: string;
+  /** Clear head: Meditate before a habit's task; never checks it off, offers Focus at the end. */
+  clearHead?: boolean;
 }
 
 export interface Settings {

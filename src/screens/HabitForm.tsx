@@ -72,7 +72,8 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const [minimum, setMinimum] = useState(habit?.minimum_version ?? '');
   const [messages, setMessages] = useState<string[]>(habit?.messages ?? []);
   const [habitKind, setHabitKind] = useState<HabitKind>(habit?.habit_kind ?? 'want');
-  const [sessionMin, setSessionMin] = useState(habit?.session_minutes ?? 15);
+  // The session timer was replaced by Focus; the stored length is kept as it is.
+  const sessionMin = habit?.session_minutes ?? 15;
   // Get ready was removed; the stored length is kept as it is.
   const readyMin = habit?.ready_minutes ?? 3;
   const [ladder, setLadder] = useState<string[]>(habit?.ladder ?? []);
@@ -252,7 +253,7 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
   const moreSet = [
     scheduled && reminder,
     (plain || isAnchor) && askNote,
-    plain && timerLink != null,
+    plain && timerLink === 'meditate',
     isHabit && afterHabit,
     isHabit && planWhen != null,
     isHabit && obstacle != null,
@@ -503,12 +504,6 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
 
             {avoid && (
               <>
-                <Label>Session</Label>
-                <Stepper value={sessionMin} min={5} max={120} step={5} onChange={setSessionMin} suffix="min" />
-                <View style={{ marginTop: 8 }}>
-                  <Help>{`“Start ${sessionMin} min” opens a timer; starting is what counts.`}</Help>
-                </View>
-
                 <Label hint="optional">Ladder</Label>
                 <StepList
                   steps={ladder}
@@ -555,23 +550,22 @@ function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaul
 
                 {plain && (
                   <>
-                    <Label hint="optional">Timer</Label>
-                    <Segmented<TimerKind | 'none'>
-                      value={timerLink ?? 'none'}
-                      onChange={(v) => setTimerLink(v === 'none' ? null : v)}
+                    <Label>Timer</Label>
+                    <Segmented<TimerKind>
+                      value={timerLink ?? 'focus'}
+                      onChange={setTimerLink}
                       options={[
-                        { value: 'none', label: 'None' },
                         { value: 'focus', label: 'Focus' },
                         { value: 'meditate', label: 'Meditate' },
                       ]}
                     />
                     <View style={{ marginTop: 8 }}>
                       <Help>
-                        {timerLink === 'focus'
-                          ? 'Start it as a Focus round. The first finished round checks it off (an avoid habit counts when the round starts).'
-                          : timerLink === 'meditate'
-                            ? 'Start it as a Meditate session. Finishing it checks it off.'
-                            : 'Link a Focus or Meditate timer to start it in one tap.'}
+                        {timerLink === 'meditate'
+                          ? 'Its main button is Meditate · 10; finishing it checks it off.'
+                          : avoid
+                            ? 'Focus · 25 counts the moment the round starts. Clear head · 5 is Meditate first.'
+                            : 'The first finished Focus round checks it off. Clear head · 5 is Meditate first.'}
                       </Help>
                     </View>
                   </>

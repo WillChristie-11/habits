@@ -20,7 +20,7 @@ export const FOCUS_END_CATEGORY = 'focus-end';
 export const FOCUS_ACTIONS = ['focus-break', 'focus-keep', 'focus-done'] as const;
 export type FocusAction = (typeof FOCUS_ACTIONS)[number];
 
-/** 'item' → Done / Later / Skip. 'start-15' → Start 15 min / Later / Skip (avoid habits). */
+/** 'item' → Done / Later / Skip. 'start-25' → Focus 25 / Later / Skip (avoid habits). */
 const categoryId = (c: string) => (c === 'item' ? ITEM_CATEGORY : `habit-${c}`);
 
 const registeredStart = new Set<number>();
@@ -34,7 +34,7 @@ async function ensureStartCategories(plan: PlannedNotification[]) {
     try {
       await Notifications.setNotificationCategoryAsync(`habit-start-${n}`, [
         // Starting opens the app to the timer.
-        { identifier: ACTION_START, buttonTitle: `Start ${n} min`, options: { opensAppToForeground: true } },
+        { identifier: ACTION_START, buttonTitle: `Focus ${n}`, options: { opensAppToForeground: true } },
         { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
         { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
       ]);

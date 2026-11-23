@@ -13,6 +13,7 @@ import { DEFAULT_MINUTES, breakMinutes, clock, focusRound } from '../lib/timers'
 import { useEndTime } from '../components/useEndTime';
 import { TimerVideo } from '../components/TimerVideo';
 import { FeelingPicker } from '../components/FeelingPicker';
+import { AvoidAfterCard } from '../components/AvoidAfterCard';
 import { themes, type Theme } from '../theme';
 
 const KEEP_AWAKE_TAG = 'focus';
@@ -28,7 +29,13 @@ export function FocusScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const s = useMemo(() => makeStyles(dark), []);
-  const params = useLocalSearchParams<{ startId?: string; minutes?: string; habitId?: string; action?: string }>();
+  const params = useLocalSearchParams<{
+    startId?: string;
+    minutes?: string;
+    habitId?: string;
+    action?: string;
+    dread?: string;
+  }>();
   const store = useStore();
   const { settings, updateSettings, focusLog, addFocusRound, habits, idx, ctx, mark, startSession, rateFeeling } =
     store;
@@ -45,6 +52,10 @@ export function FocusScreen() {
   const [line, setLine] = useState(active?.line ?? '');
   const roundsToday = focusLog.filter((r) => r.date === ctx.today).length;
   const habit = active?.habitId != null ? habits.find((h) => h.id === active.habitId) : undefined;
+  const avoidHabit = habit?.kind === 'habit' && habit.habit_kind === 'avoid' ? habit : undefined;
+  // Avoid habit: "How heavy was it actually?" once per round, at its end or when stopping early.
+  const [askedFor, setAskedFor] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   const save = (patch: Partial<ActiveTimer> | null) =>
     updateSettings({ activeTimer: patch && active ? { ...active, ...patch } : (patch as ActiveTimer | null) });
@@ -69,8 +80,9 @@ export function FocusScreen() {
     if (!params.startId || active?.startId === params.startId) return;
     const habitId = params.habitId ? Number(params.habitId) : null;
     const h = habitId != null ? habits.find((x) => x.id === habitId) : undefined;
-    // Linked avoid habit: the round is its session (counts at the start, like Start N min).
-    if (h?.habit_kind === 'avoid') startSession(h, ctx.today);
+    // Avoid habit: the round is its session and counts the moment it starts.
+    if (h?.habit_kind === 'avoid')
+      startSession(h, ctx.today, params.dread ? { dreadBefore: Number(params.dread) } : null);
     startRound({
       kind: 'focus',
       minutes: Number(params.minutes) || DEFAULT_MINUTES.focus,
@@ -157,11 +169,21 @@ export function FocusScreen() {
   const progress = 1 - left / total;
   const videoSize = width;
 
+  const askAvoid = !!avoidHabit && askedFor !== active.startedAt && (done || stopping);
   const stop = () =>
-    Alert.alert('End this round?', undefined, [
+    Alert.alert('End this round?', avoidHabit ? 'Stopping early still counts.' : undefined, [
       { text: 'Keep going', style: 'cancel' },
-      { text: 'End it', style: 'destructive', onPress: finishAll },
+      {
+        text: 'End it',
+        style: 'destructive',
+        onPress: () => (avoidHabit && askedFor !== active.startedAt ? setStopping(true) : finishAll()),
+      },
     ]);
+  const avoidDone = () => {
+    setAskedFor(active.startedAt);
+    if (stopping) finishAll();
+  };
+  const step = habit ? habit.ladder[habit.ladder_index] : undefined;
 
   // When a round or break has ended the screen asks what's next: less video, room for the buttons.
   const asking = (done && !keepGoing) || active.phase === 'breakDone';
@@ -194,25 +216,30 @@ export function FocusScreen() {
       </View>
 
       <View style={s.body}>
-        <Text style={s.kicker}>
-          {inBreak ? 'Break' : `Focus · round ${round} of 4`}
-          {habit ? ` · ${habit.name}` : ''}
-        </Text>
+        <Text style={s.kicker}>{inBreak ? 'Break' : `Focus · round ${round} of 4`}</Text>
         <Text style={[s.clock, left <= 0 && !(keepGoing && done) && s.clockWords]}>
           {keepGoing && done ? `+${clock(over)}` : left > 0 ? clock(left) : inBreak ? 'Break’s over' : 'Focus done'}
         </Text>
-        <TextInput
-          value={line}
-          onChangeText={setLine}
-          onEndEditing={() => save({ line: line.trim() })}
-          placeholder="What are you focusing on?"
-          placeholderTextColor={dark.textMuted}
-          keyboardAppearance="dark"
-          returnKeyType="done"
-          maxLength={80}
-          style={s.line}
-          accessibilityLabel="What are you focusing on? (optional)"
-        />
+        {habit ? (
+          <View style={s.habitInfo}>
+            <Text style={s.habitName}>{habit.name}</Text>
+            {step ? <Text style={s.habitLine}>Next: {step}</Text> : null}
+            {habit.pair_with ? <Text style={s.habitLine}>With {habit.pair_with}</Text> : null}
+          </View>
+        ) : (
+          <TextInput
+            value={line}
+            onChangeText={setLine}
+            onEndEditing={() => save({ line: line.trim() })}
+            placeholder="What are you focusing on?"
+            placeholderTextColor={dark.textMuted}
+            keyboardAppearance="dark"
+            returnKeyType="done"
+            maxLength={80}
+            style={s.line}
+            accessibilityLabel="What are you focusing on? (optional)"
+          />
+        )}
         <View style={s.dots} accessibilityLabel={`Round ${round} of 4`}>
           {[0, 1, 2, 3].map((i) => (
             <View
@@ -268,6 +295,9 @@ export function FocusScreen() {
         )}
       </View>
 
+      {askAvoid && avoidHabit && (
+        <AvoidAfterCard habit={avoidHabit} date={ctx.today} autoDismiss={false} onDismiss={avoidDone} />
+      )}
       {feeling != null && habit && (
         <FeelingPicker
           title={`How do you feel after ${habit.name}?`}
@@ -318,6 +348,9 @@ const makeStyles = (t: Theme) =>
     clock: { color: t.text, fontSize: 72, fontWeight: '200', fontVariant: ['tabular-nums'] },
     clockWords: { fontSize: 40, marginVertical: 16 },
     line: { color: t.text, fontSize: 17, textAlign: 'center', alignSelf: 'stretch', paddingVertical: 4 },
+    habitInfo: { alignItems: 'center', gap: 2 },
+    habitName: { color: t.text, fontSize: 17, fontWeight: '600', textAlign: 'center' },
+    habitLine: { color: t.textMuted, fontSize: 15, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 8, marginTop: 4 },
     dotItem: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: t.textMuted },
     dotOn: { backgroundColor: t.accent, borderColor: t.accent },

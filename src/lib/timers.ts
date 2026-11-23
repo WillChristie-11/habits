@@ -65,3 +65,44 @@ export function linkedTimer(meta: Record<string, unknown> | null | undefined): T
   const v = meta?.timer;
   return v === 'focus' || v === 'meditate' ? v : null;
 }
+
+/** Lengths when a timer is started from a habit (the tab keeps its own last-used lengths). */
+export const FROM_HABIT = { focus: 25, meditate: 10, clearHead: 5 } as const;
+
+/** Meditate is a habit's main timer if its Timer setting says so, or its name mentions meditating. */
+export function isMeditateHabit(h: { name: string; meta?: Record<string, unknown> | null }): boolean {
+  return linkedTimer(h.meta) === 'meditate' || /meditat/i.test(h.name);
+}
+
+export interface HabitTimerButton {
+  kind: TimerKind;
+  minutes: number;
+  label: string;
+  /** Clear head: Meditate that never checks the habit off, then offers Focus. */
+  clearHead: boolean;
+}
+
+/**
+ * The two timer buttons on a habit's detail sheet: Focus · 25 and Clear head · 5, or for a
+ * meditation habit Meditate · 10 and Focus · 25.
+ */
+export function habitTimerButtons(h: {
+  name: string;
+  meta?: Record<string, unknown> | null;
+}): [HabitTimerButton, HabitTimerButton] {
+  const focus: HabitTimerButton = {
+    kind: 'focus',
+    minutes: FROM_HABIT.focus,
+    label: `Focus · ${FROM_HABIT.focus}`,
+    clearHead: false,
+  };
+  if (isMeditateHabit(h))
+    return [
+      { kind: 'meditate', minutes: FROM_HABIT.meditate, label: `Meditate · ${FROM_HABIT.meditate}`, clearHead: false },
+      focus,
+    ];
+  return [
+    focus,
+    { kind: 'meditate', minutes: FROM_HABIT.clearHead, label: `Clear head · ${FROM_HABIT.clearHead}`, clearHead: true },
+  ];
+}
