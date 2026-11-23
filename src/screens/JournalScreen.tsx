@@ -20,6 +20,8 @@ import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
 import { recapLines, weekCounts } from '../lib/journal';
 import { focusRecapLine } from '../lib/timers';
+import { betterRecap } from '../lib/dayClose';
+import { HabitForm } from './HabitForm';
 import { wakeAnchor, wakeWeek, minutesOfDay } from '../lib/insights';
 import { WEEKDAY_NAMES, WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
@@ -292,8 +294,10 @@ function WeekStrip({
 function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences, focusLog } = useStore();
+  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences, focusLog, dayCloses } = useStore();
   const focusLine = focusRecapLine(focusLog, weekDays(sunday));
+  const better = betterRecap(dayCloses, weekDays(sunday));
+  const [habitFrom, setHabitFrom] = useState<string | null>(null);
   const counts = weekCounts(habits, idx, ctx, sunday, occurrences);
   const lines = recapLines(pages, sunday);
   const wake = wakeWeek(wakeAnchor(habits), idx, weekDays(sunday));
@@ -301,7 +305,16 @@ function SundayRecap({ sunday }: { sunday: string }) {
   const nextWeek = addDays(sunday, 1);
   const editable = sunday === ctx.today;
   const [next, setNext] = useState(weeks[nextWeek] ?? '');
-  if (!counts.length && !lines.length && !thisWeek && !editable && !weeks[nextWeek] && !wake.text && !focusLine)
+  if (
+    !counts.length &&
+    !lines.length &&
+    !thisWeek &&
+    !editable &&
+    !weeks[nextWeek] &&
+    !wake.text &&
+    !focusLine &&
+    !better.lines.length
+  )
     return null;
   return (
     <View style={s.recap}>
@@ -318,6 +331,30 @@ function SundayRecap({ sunday }: { sunday: string }) {
         </View>
       ))}
       {focusLine && <Text style={s.recapCount}>{focusLine}</Text>}
+      {better.lines.length > 0 && (
+        <View>
+          <Text style={s.recapDay}>Better tomorrow</Text>
+          {better.lines.map((l, i) => (
+            <Text key={`${i}-${l}`} style={s.recapLine} numberOfLines={2}>
+              {l}
+            </Text>
+          ))}
+          {better.repeated.map((l) => (
+            <Pressable key={l} onPress={() => setHabitFrom(l)} accessibilityRole="button" style={s.makeHabit}>
+              <Text style={s.recapLine} numberOfLines={2}>
+                {l}
+              </Text>
+              <Text style={s.makeHabitText}>Make it a habit?</Text>
+            </Pressable>
+          ))}
+          <HabitForm
+            visible={habitFrom != null}
+            habit={null}
+            defaultName={habitFrom ?? ''}
+            onClose={() => setHabitFrom(null)}
+          />
+        </View>
+      )}
       {wake.text && (
         <View style={s.wakeRow}>
           <Text style={s.recapLine}>
@@ -427,6 +464,8 @@ const makeStyles = (t: Theme) =>
       paddingVertical: 7,
     },
     closeText: { color: t.accent, fontSize: 15, fontWeight: '600' },
+    makeHabit: { marginTop: 6, gap: 2 },
+    makeHabitText: { color: t.accent, fontSize: 14, fontWeight: '600' },
     pageText: {
       paddingHorizontal: 20,
       paddingTop: 12,

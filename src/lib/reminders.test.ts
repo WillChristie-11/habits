@@ -399,3 +399,30 @@ test('cut-back habits are never expected, counted, flagged, nudged or in the mor
   assert.equal(plan.filter((p) => /Snacking/.test(p.title + p.body)).length, 0);
   assert.deepEqual(banners([wake, snack], idx, ctx, R, at('21:00')), []);
 });
+
+test('close the day: one notification at Wind down unless closed; the morning carries yesterday’s line', async () => {
+  const { planNotifications, CLOSE_CATEGORY } = await import('./reminders');
+  const { DEFAULT_REMINDERS } = await import('../types');
+  const { indexRecords } = await import('./schedule');
+  const now = new Date('2026-11-23T06:00:00');
+  const r = { ...DEFAULT_REMINDERS, checkins: { ...DEFAULT_REMINDERS.checkins, enabled: false } };
+  const close = { windDown: '21:30', closed: ['2026-11-24'], better: { '2026-11-22': 'phone away at dinner' } };
+  const plan = planNotifications([], indexRecords([]), { today: '2026-11-23' }, r, now, close);
+  const closes = plan.filter((p) => p.data.type === 'close');
+  assert.deepEqual(
+    closes.map((p) => [p.id, p.title, p.body, p.category]),
+    [['close-2026-11-23', 'Close the day?', 'Three lines, then you’re done.', CLOSE_CATEGORY]],
+  );
+  const morning = plan.find((p) => p.id === 'morning-2026-11-23');
+  assert.match(morning?.body ?? '', /Yesterday you said: better at phone away at dinner\./);
+  assert.ok(!plan.some((p) => p.id === 'morning-2026-11-24'));
+  const off = planNotifications(
+    [],
+    indexRecords([]),
+    { today: '2026-11-23' },
+    { ...r, closeDayEnabled: false },
+    now,
+    close,
+  );
+  assert.ok(!off.some((p) => p.data.type === 'close'));
+});

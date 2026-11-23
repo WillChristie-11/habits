@@ -19,6 +19,8 @@ interface Props {
   habit: Habit | null; // null = new
   /** For new items: start as a habit, anchor or activity. */
   defaultKind?: ItemKind;
+  /** A starting name for a new item (e.g. a recap's "Make it a habit?"). */
+  defaultName?: string;
   onClose(): void;
 }
 
@@ -36,22 +38,34 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 /** after = under an anchor (or another habit); anytime = no anchor; time = its own time. */
 type When = 'after' | 'anytime' | 'time';
 
-export function HabitForm({ visible, habit, defaultKind = 'habit', onClose }: Props) {
+export function HabitForm({ visible, habit, defaultKind = 'habit', defaultName = '', onClose }: Props) {
   const s = useThemedStyles(makeStyles);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={s.screen}>{visible && <FormBody habit={habit} defaultKind={defaultKind} onClose={onClose} />}</View>
+      <View style={s.screen}>
+        {visible && <FormBody habit={habit} defaultKind={defaultKind} defaultName={defaultName} onClose={onClose} />}
+      </View>
     </Modal>
   );
 }
 
-function FormBody({ habit, defaultKind, onClose }: { habit: Habit | null; defaultKind: ItemKind; onClose(): void }) {
+function FormBody({
+  habit,
+  defaultKind,
+  defaultName,
+  onClose,
+}: {
+  habit: Habit | null;
+  defaultKind: ItemKind;
+  defaultName: string;
+  onClose(): void;
+}) {
   const s = useThemedStyles(makeStyles);
   const { habits, addHabit, editHabit } = useStore();
   const theme = useTheme();
 
   const [kind, setKind] = useState<ItemKind>(habit?.kind ?? defaultKind);
-  const [name, setName] = useState(habit?.name ?? '');
+  const [name, setName] = useState(habit?.name ?? defaultName);
   const [ftype, setFtype] = useState<FrequencyType>(habit?.frequency.type ?? 'daily');
   const [count, setCount] = useState(habit?.frequency.count ?? 2);
   const [days, setDays] = useState<number[]>(

@@ -159,6 +159,8 @@ export interface ReminderSettings {
   /** General motivational lines, used for any habit. */
   messages: string[];
   checkins: CheckinSettings;
+  /** Close the day? at the Wind down time. */
+  closeDayEnabled: boolean;
 }
 
 /** Random check-ins: a few nudges a day at unpredictable times, about something still open. */
@@ -181,4 +183,5 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   snoozes: [],
   messages: [],
   checkins: { enabled: true, count: 2, start: '09:00', end: '21:00', spacing: 90 },
+  closeDayEnabled: true,
 };

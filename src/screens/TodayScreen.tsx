@@ -15,7 +15,7 @@ import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
 import { Priorities } from '../components/Priorities';
-import { WeekIntentionLine } from '../components/WeekIntention';
+import { WeekIntentionLine, YesterdayBetterLine } from '../components/WeekIntention';
 import { LogRow } from '../components/LogRow';
 import { AnchorRow } from '../components/AnchorRow';
 import { SwipeRow } from '../components/SwipeRow';
@@ -97,6 +97,7 @@ export function TodayScreen() {
         {!showNow && (
           <>
             {isToday && <WeekIntentionLine />}
+            {isToday && <YesterdayBetterLine />}
             {isToday && <Banners onStart={actions.startTimer} />}
             {tracked.length > 0 && (
               <WeekStrip selected={date} onSelect={(d) => setPicked(d === ctx.today ? null : d)} />

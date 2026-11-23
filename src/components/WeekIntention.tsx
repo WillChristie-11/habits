@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useStore } from '../store';
-import { weekStart } from '../lib/dates';
+import { addDays, weekStart } from '../lib/dates';
+import { yesterdayLine } from '../lib/dayClose';
 import { Button, Input } from './ui';
 import { useThemedStyles, type Theme } from '../theme';
 
@@ -69,3 +70,21 @@ const makeStyles = (t: Theme) =>
     title: { fontSize: 22, fontWeight: '700', color: t.text },
     actions: { flexDirection: 'row', gap: 10 },
   });
+
+/** "Yesterday you said: better at …" from last night's Close the day; tap to hide for the day. */
+export function YesterdayBetterLine() {
+  const s = useThemedStyles(makeStyles);
+  const { dayCloses, ctx, settings, updateSettings } = useStore();
+  const line = yesterdayLine(dayCloses.find((c) => c.date === addDays(ctx.today, -1))?.better);
+  if (!line || settings.betterHiddenOn === ctx.today) return null;
+  return (
+    <Pressable
+      onPress={() => updateSettings({ betterHiddenOn: ctx.today })}
+      style={s.line}
+      accessibilityRole="button"
+      accessibilityHint="Hides it for today"
+    >
+      <Text style={s.text}>{line}</Text>
+    </Pressable>
+  );
+}

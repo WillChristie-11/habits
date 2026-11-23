@@ -1,7 +1,7 @@
 // Thin wrapper over expo-notifications. All "what to schedule" logic lives in reminders.ts.
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import type { PlannedNotification } from './reminders';
+import { CLOSE_CATEGORY, type PlannedNotification } from './reminders';
 
 export const ITEM_CATEGORY = 'habit-item';
 export const ACTION_DONE = 'done';
@@ -113,7 +113,7 @@ export async function initNotifications() {
     // summaries don't, because the in-app banners already say the same thing.
     handleNotification: async (n) => {
       const type = (n.request.content.data as { type?: string } | undefined)?.type;
-      const show = type === 'item' || type === 'timer' || type === 'follow';
+      const show = type === 'item' || type === 'timer' || type === 'follow' || type === 'close';
       return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
     },
   });
@@ -122,6 +122,11 @@ export async function initNotifications() {
       { identifier: ACTION_DONE, buttonTitle: 'Done', options: { opensAppToForeground: false } },
       { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
       { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
+    ]);
+    // Close the day? Close opens the sheet; Not tonight just dismisses (parsed as 'skip').
+    await Notifications.setNotificationCategoryAsync(CLOSE_CATEGORY, [
+      { identifier: 'close-open', buttonTitle: 'Close', options: { opensAppToForeground: true } },
+      { identifier: ACTION_SKIP, buttonTitle: 'Not tonight', options: { opensAppToForeground: false } },
     ]);
     await Notifications.setNotificationCategoryAsync(FOCUS_END_CATEGORY, [
       { identifier: 'focus-break', buttonTitle: 'Break', options: { opensAppToForeground: true } },

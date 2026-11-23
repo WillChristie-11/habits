@@ -98,6 +98,12 @@ export function SettingsScreen() {
             <Text style={s.timeLabel}>Deadline</Text>
             <TimeField value={r.eveningDeadline} onChange={(eveningDeadline) => updateReminders({ eveningDeadline })} />
           </View>
+          <Toggle
+            label="Close the day"
+            note="One notification at Wind down: three optional lines, then you’re done. Not if the day is already closed."
+            value={r.closeDayEnabled}
+            onChange={(v) => updateReminders({ closeDayEnabled: v })}
+          />
         </View>
         <View style={{ marginTop: 8 }}>
           <Help>Reminders for anchors and timed habits are set on each item.</Help>

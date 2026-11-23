@@ -1,5 +1,6 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
 import { FROM_HABIT } from './timers';
+import { yesterdayLine } from './dayClose';
 import type { CheckinSettings, Habit, ReminderSettings } from '../types';
 import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from './dates';
 import {
@@ -239,7 +240,7 @@ export interface PlannedNotification {
   body: string;
   /** 'item' → Done / Later / Skip buttons; 'start-N' → Start N min / Later / Skip (avoid habits) */
   category: string | null;
-  data: { type: 'item' | 'morning' | 'evening'; habitId?: number; date: string };
+  data: { type: 'item' | 'morning' | 'evening' | 'close'; habitId?: number; date: string };
 }
 
 /** Avoid habits get a "Focus 25" button instead of "Done". */
@@ -280,6 +281,15 @@ function itemBody(h: Habit, minutesBefore: number, date: string, general: string
   return extra ? `${when} · ${extra}` : when;
 }
 
+/** Close the day: the Wind down time, the days already closed, and each day's "better" line. */
+export interface ClosePlan {
+  windDown: string | null;
+  closed: string[];
+  better: Record<string, string>;
+}
+
+export const CLOSE_CATEGORY = 'close-day';
+
 /** Everything that should be scheduled right now, for today and tomorrow only. */
 export function planNotifications(
   habits: Habit[],
@@ -287,6 +297,7 @@ export function planNotifications(
   ctx: Ctx,
   r: ReminderSettings,
   now: Date,
+  close: ClosePlan = { windDown: null, closed: [], better: {} },
 ): PlannedNotification[] {
   const out: PlannedNotification[] = [];
   const days = [ctx.today, addDays(ctx.today, 1)];
@@ -318,10 +329,13 @@ export function planNotifications(
       const at = atTime(date, r.morningTime);
       const m = morningPending(habits, idx, ctx, date);
       const av = avoidPending(habits, idx, ctx, date, true);
-      if (future(at) && (m.length || av.length)) {
+      // Last night's "Tomorrow I'll do better at…" rides along.
+      const better = yesterdayLine(close.better[addDays(date, -1)]);
+      if (future(at) && (m.length || av.length || better)) {
         const lines = [
           ...(m.length ? [`${m.length} to do: ${list(m.map((h) => h.name))}`] : []),
           ...av.map((h) => avoidLine(h)),
+          ...(better ? [better] : []),
         ];
         out.push({
           id: `morning-${date}`,
@@ -332,6 +346,20 @@ export function planNotifications(
           data: { type: 'morning', date },
         });
       }
+    }
+
+    // Close the day? at Wind down, unless the day is already closed.
+    if (r.closeDayEnabled && close.windDown && !close.closed.includes(date)) {
+      const at = atTime(date, close.windDown);
+      if (future(at))
+        out.push({
+          id: `close-${date}`,
+          at,
+          title: 'Close the day?',
+          body: 'Three lines, then you’re done.',
+          category: CLOSE_CATEGORY,
+          data: { type: 'close', date },
+        });
     }
 
     // Evening nudge, 2 h before the deadline, with what's left (flagged first) and a "why".

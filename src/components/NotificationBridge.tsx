@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
 import { planNotifications } from '../lib/reminders';
+import { windDownAnchor } from '../lib/dayClose';
 import {
   initNotifications,
   listenForResponses,
@@ -20,7 +21,7 @@ const SYNC_DEBOUNCE_MS = 400;
  */
 export function NotificationBridge() {
   const store = useStore();
-  const { habits, records, idx, ctx, settings } = store;
+  const { habits, records, idx, ctx, settings, dayCloses } = store;
   const [foregroundTick, setForegroundTick] = useState(0);
 
   // Latest store for the response listener, which is registered once.
@@ -48,6 +49,11 @@ export function NotificationBridge() {
         if (r.action === 'feel') await s.rateOccurrence(r.occurrenceId, { feeling: r.feeling });
         else if (r.action === 'note') await s.rateOccurrence(r.occurrenceId, { note: r.text });
         else router.push({ pathname: '/tempted', params: { occ: String(r.occurrenceId) } });
+        return;
+      }
+      // Close the day?: Close (or a tap) opens the sheet; Not tonight does nothing.
+      if (r.type === 'close') {
+        if (r.action !== 'skip') router.push({ pathname: '/close', params: r.date ? { date: r.date } : {} });
         return;
       }
       if (r.habitId == null || !r.date) return;
@@ -82,10 +88,15 @@ export function NotificationBridge() {
   // Debounced re-plan + reschedule.
   useEffect(() => {
     const t = setTimeout(() => {
-      syncNotifications(planNotifications(habits, idx, ctx, settings.reminders, new Date()));
+      const close = {
+        windDown: windDownAnchor(habits)?.scheduled_time ?? null,
+        closed: dayCloses.map((c) => c.date),
+        better: Object.fromEntries(dayCloses.filter((c) => c.better).map((c) => [c.date, c.better as string])),
+      };
+      syncNotifications(planNotifications(habits, idx, ctx, settings.reminders, new Date(), close));
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [habits, records, idx, ctx, settings.reminders, foregroundTick]);
+  }, [habits, records, idx, ctx, settings.reminders, dayCloses, foregroundTick]);
 
   return null;
 }
