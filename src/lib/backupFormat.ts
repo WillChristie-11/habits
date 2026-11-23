@@ -17,6 +17,7 @@ export const BACKUP_TABLES = [
   'focus_log',
   'day_close',
   'not_today',
+  'nudge_log',
 ] as const;
 
 export interface Backup {

@@ -1,6 +1,8 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
 import { FROM_HABIT } from './timers';
 import { yesterdayLine } from './dayClose';
+import { planNudges, nudgesPaused, type NudgeLogRow } from './nudges';
+import type { NotToday } from './notToday';
 import type { CheckinSettings, Habit, ReminderSettings } from '../types';
 import { addDays, atTime, diffDays, formatDuration, formatTime, weekDays } from './dates';
 import {
@@ -240,7 +242,7 @@ export interface PlannedNotification {
   body: string;
   /** 'item' → Done / Later / Skip buttons; 'start-N' → Start N min / Later / Skip (avoid habits) */
   category: string | null;
-  data: { type: 'item' | 'morning' | 'evening' | 'close'; habitId?: number; date: string };
+  data: { type: 'item' | 'morning' | 'evening' | 'close' | 'nudge'; habitId?: number; date: string; frame?: string };
 }
 
 /** Avoid habits get a "Focus 25" button instead of "Done". */
@@ -290,6 +292,14 @@ export interface ClosePlan {
 
 export const CLOSE_CATEGORY = 'close-day';
 
+/** What the nudge engine reads: its log, Not today reasons, weekly intentions, the horizon line. */
+export interface NudgeInputs {
+  log: NudgeLogRow[];
+  notToday: NotToday[];
+  weeks: Record<string, string>;
+  horizon: string | null;
+}
+
 /** Everything that should be scheduled right now, for today and tomorrow only. */
 export function planNotifications(
   habits: Habit[],
@@ -298,6 +308,7 @@ export function planNotifications(
   r: ReminderSettings,
   now: Date,
   close: ClosePlan = { windDown: null, closed: [], better: {} },
+  nudges: NudgeInputs | null = null,
 ): PlannedNotification[] {
   const out: PlannedNotification[] = [];
   const days = [ctx.today, addDays(ctx.today, 1)];
@@ -309,6 +320,7 @@ export function planNotifications(
     // Per-item reminders (anchors and timed habits).
     for (const h of habits) {
       if (!h.reminder || !h.scheduled_time || !onTimeline(h)) continue;
+      if (isAvoid(h) && nudgesPaused(h, date)) continue; // Quiet for a week
       if (!visibleOn(h, idx, c, date) || stateOn(h, idx, date, c) !== 'pending') continue;
       const at = new Date(atTime(date, h.scheduled_time).getTime() - h.remind_before * 60_000);
       if (!future(at)) continue;
@@ -395,10 +407,38 @@ export function planNotifications(
     }
   }
 
-  // Random check-ins about something still open (want and avoid habits).
+  // Avoid habits: the nudge engine (frames, at most 2 a day, stops after 3 ignored in a row).
+  if (nudges) {
+    for (const date of days) {
+      for (const n of planNudges({
+        habits,
+        idx,
+        date,
+        today: ctx.today,
+        now,
+        r,
+        cutoff: nudgeStart(r),
+        log: nudges.log,
+        notToday: nudges.notToday,
+        weeks: nudges.weeks,
+        horizon: nudges.horizon,
+      })) {
+        out.push({
+          id: n.id,
+          at: n.at,
+          title: n.title,
+          body: n.body,
+          category: n.category,
+          data: { type: 'nudge', habitId: n.habitId, date: n.date, frame: n.frame },
+        });
+      }
+    }
+  }
+
+  // Random check-ins about something still open (want habits; avoid habits get their nudges).
   for (const date of days) {
     const times = checkinTimes(r.checkins, date).map((hm) => atTime(date, hm));
-    const pool = checkinCandidates(habits, idx, ctx, date);
+    const pool = checkinCandidates(habits, idx, ctx, date).filter((h) => !nudges || !isAvoid(h));
     times.forEach((at, i) => {
       if (!future(at) || !pool.length) return;
       // Different habit each time when possible; urgent ones come first in the pool.

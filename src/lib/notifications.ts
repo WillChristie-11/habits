@@ -2,6 +2,8 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { CLOSE_CATEGORY, type PlannedNotification } from './reminders';
+import { NAME_IT_CATEGORY } from './nudges';
+import { isReason, type NotTodayReason } from './notToday';
 
 export const ITEM_CATEGORY = 'habit-item';
 export const ACTION_DONE = 'done';
@@ -113,7 +115,7 @@ export async function initNotifications() {
     // summaries don't, because the in-app banners already say the same thing.
     handleNotification: async (n) => {
       const type = (n.request.content.data as { type?: string } | undefined)?.type;
-      const show = type === 'item' || type === 'timer' || type === 'follow' || type === 'close';
+      const show = type === 'item' || type === 'timer' || type === 'follow' || type === 'close' || type === 'nudge';
       return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
     },
   });
@@ -122,6 +124,17 @@ export async function initNotifications() {
       { identifier: ACTION_DONE, buttonTitle: 'Done', options: { opensAppToForeground: false } },
       { identifier: ACTION_LATER, buttonTitle: 'Later (30 min)', options: { opensAppToForeground: false } },
       { identifier: ACTION_SKIP, buttonTitle: 'Skip', options: { opensAppToForeground: false } },
+    ]);
+    // Name it: reason buttons answered from the notification (the first three stay in the background).
+    await Notifications.setNotificationCategoryAsync(NAME_IT_CATEGORY, [
+      {
+        identifier: 'reason-unclear',
+        buttonTitle: 'Not sure where to start',
+        options: { opensAppToForeground: false },
+      },
+      { identifier: 'reason-too_big', buttonTitle: 'It feels too big', options: { opensAppToForeground: false } },
+      { identifier: 'reason-tired', buttonTitle: 'Just tired', options: { opensAppToForeground: false } },
+      { identifier: ACTION_START, buttonTitle: 'Nothing, Focus 25', options: { opensAppToForeground: true } },
     ]);
     // Close the day? Close opens the sheet; Not tonight just dismisses (parsed as 'skip').
     await Notifications.setNotificationCategoryAsync(CLOSE_CATEGORY, [
@@ -208,7 +221,11 @@ export function syncNotifications(plan: PlannedNotification[]): Promise<void> {
 export interface ItemResponse {
   /** unique per tap, for de-duplication */
   key: string;
-  action: 'done' | 'later' | 'skip' | 'start' | 'feel' | 'note' | 'open';
+  action: 'done' | 'later' | 'skip' | 'start' | 'feel' | 'note' | 'reason' | 'open';
+  /** the notification's id (nudges are logged by it) */
+  id: string;
+  /** Name it's reason buttons */
+  reason: NotTodayReason | null;
   habitId: number | null;
   date: string | null;
   /** what the notification was: item / morning / evening / timer / follow / wait */
@@ -232,22 +249,27 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
   };
   const a = r.actionIdentifier;
   const feel = a.match(FEEL_ACTION);
-  const action: ItemResponse['action'] = feel
-    ? 'feel'
-    : a === ACTION_NOTE
-      ? 'note'
-      : a === ACTION_DONE
-        ? 'done'
-        : a === ACTION_LATER
-          ? 'later'
-          : a === ACTION_SKIP
-            ? 'skip'
-            : a === ACTION_START
-              ? 'start'
-              : 'open';
+  const reasonKey = a.startsWith('reason-') ? a.slice('reason-'.length) : null;
+  const action: ItemResponse['action'] = isReason(reasonKey)
+    ? 'reason'
+    : feel
+      ? 'feel'
+      : a === ACTION_NOTE
+        ? 'note'
+        : a === ACTION_DONE
+          ? 'done'
+          : a === ACTION_LATER
+            ? 'later'
+            : a === ACTION_SKIP
+              ? 'skip'
+              : a === ACTION_START
+                ? 'start'
+                : 'open';
   return {
     key: `${r.notification.request.identifier}|${r.notification.date}|${a}`,
     action,
+    id: r.notification.request.identifier,
+    reason: isReason(reasonKey) ? reasonKey : null,
     habitId: typeof data.habitId === 'number' ? data.habitId : null,
     date: typeof data.date === 'string' ? data.date : null,
     type: typeof data.type === 'string' ? data.type : null,
@@ -269,4 +291,14 @@ export function listenForResponses(handler: (r: ItemResponse) => void): () => vo
     Notifications.clearLastNotificationResponse();
   }
   return () => sub.remove();
+}
+
+/** A short reply sent straight away (e.g. after a reason button on a Name it nudge). */
+export async function notifyNow(key: string, title: string, body: string) {
+  if (!supported || (await getPermission()) !== 'granted') return;
+  await Notifications.scheduleNotificationAsync({
+    identifier: `${FOLLOW_PREFIX}${key}`,
+    content: { title, body, sound: false, data: { type: 'reply' } },
+    trigger: null,
+  });
 }

@@ -16,6 +16,7 @@ import { defaultAnchors } from '../lib/defaults';
 import { BACKUP_APP, type Backup } from '../lib/backupFormat';
 import type { DayClose } from '../lib/dayClose';
 import { isReason, type NotToday, type NotTodayReason } from '../lib/notToday';
+import type { NudgeLogRow, PlannedNudge } from '../lib/nudges';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -24,7 +25,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -247,6 +248,20 @@ async function open() {
         reason TEXT NOT NULL,
         note TEXT,
         created_at TEXT NOT NULL
+      );
+    `);
+  }
+  if (version < 16) {
+    // v16: the nudge log (one row per avoid-habit nudge, keyed by its notification id).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS nudge_log (
+        id TEXT PRIMARY KEY,
+        habit_id INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        frame TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        opened_at TEXT,
+        action TEXT
       );
     `);
   }
@@ -817,4 +832,61 @@ export async function addNotToday(habitId: number, date: string, reason: NotToda
     note,
     new Date().toISOString(),
   );
+}
+
+// --- Nudge log --------------------------------------------------------------------------------
+
+export async function loadNudgeLog(): Promise<NudgeLogRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<NudgeLogRow>(
+    'SELECT id, habit_id, date, frame, sent_at, opened_at, action FROM nudge_log ORDER BY sent_at',
+  );
+}
+
+/**
+ * Keep the log in step with what's scheduled: planned nudges are written (or rewritten) with
+ * their send time; ones still in the future that are no longer planned are dropped. Rows whose
+ * time has passed stay as history (sent).
+ */
+export async function syncNudgeLog(planned: PlannedNudge[], now: Date): Promise<void> {
+  const db = await getDb();
+  const nowIso = now.toISOString();
+  await db.runAsync(
+    `DELETE FROM nudge_log WHERE sent_at > ? AND opened_at IS NULL AND id NOT IN (${planned.map(() => '?').join(',') || "''"})`,
+    nowIso,
+    ...planned.map((p) => p.id),
+  );
+  for (const p of planned) {
+    await db.runAsync(
+      `INSERT INTO nudge_log (id, habit_id, date, frame, sent_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET frame = excluded.frame, sent_at = excluded.sent_at
+       WHERE nudge_log.sent_at > ?`,
+      p.id,
+      p.habitId,
+      p.date,
+      p.frame,
+      p.at.toISOString(),
+      nowIso,
+    );
+  }
+}
+
+/** A tap or a button on a nudge: it landed. */
+export async function markNudgeOpened(id: string, action: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'UPDATE nudge_log SET opened_at = COALESCE(opened_at, ?), action = ? WHERE id = ?',
+    new Date().toISOString(),
+    action,
+    id,
+  );
+}
+
+/** Merge fields into an item's meta (voice, nudge pause, chosen nudge time…). */
+export async function setHabitMeta(id: number, patch: Record<string, unknown>): Promise<void> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ meta: string | null }>('SELECT meta FROM habits WHERE id = ?', id);
+  const meta = { ...(parseMeta(row?.meta ?? null) ?? {}), ...patch };
+  for (const k of Object.keys(meta)) if (meta[k] === undefined) delete meta[k];
+  await db.runAsync('UPDATE habits SET meta = ? WHERE id = ?', JSON.stringify(meta), id);
 }

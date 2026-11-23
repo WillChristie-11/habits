@@ -33,6 +33,7 @@ function ThemedStack() {
         <Stack.Screen name="tempted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="close" options={{ presentation: 'modal' }} />
         <Stack.Screen name="nottoday" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="notlanding" options={{ presentation: 'modal' }} />
         <Stack.Screen name="focus" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="meditate" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="weigh" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />

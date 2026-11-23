@@ -4,9 +4,11 @@ import { router } from 'expo-router';
 import { useStore } from '../store';
 import { planNotifications } from '../lib/reminders';
 import { windDownAnchor } from '../lib/dayClose';
+import { REASON_REPLY, type Frame } from '../lib/nudges';
 import {
   initNotifications,
   listenForResponses,
+  notifyNow,
   requestPermission,
   syncNotifications,
   type ItemResponse,
@@ -21,7 +23,7 @@ const SYNC_DEBOUNCE_MS = 400;
  */
 export function NotificationBridge() {
   const store = useStore();
-  const { habits, records, idx, ctx, settings, dayCloses } = store;
+  const { habits, records, idx, ctx, settings, dayCloses, notToday, weeks } = store;
   const [foregroundTick, setForegroundTick] = useState(0);
 
   // Latest store for the response listener, which is registered once.
@@ -56,8 +58,18 @@ export function NotificationBridge() {
         if (r.action !== 'skip') router.push({ pathname: '/close', params: r.date ? { date: r.date } : {} });
         return;
       }
+      // Any tap or button on a nudge means it landed.
+      if (r.id.startsWith('nudge-')) await s.markNudge(r.id, r.action);
       if (r.habitId == null || !r.date) return;
-      if (!s.habits.some((h) => h.id === r.habitId)) return;
+      const habit = s.habits.find((h) => h.id === r.habitId);
+      if (!habit) return;
+      // Name it's reason buttons: save the Not today reason, then a short reply that fits it.
+      if (r.action === 'reason' && r.reason && r.reason in REASON_REPLY) {
+        await s.passToday(habit, r.date, r.reason);
+        const reply = REASON_REPLY[r.reason as keyof typeof REASON_REPLY];
+        await notifyNow(`reason-${r.habitId}-${r.date}`, reply.title, reply.body);
+        return;
+      }
       if (r.action === 'done') await s.mark(r.habitId, 'done', r.date);
       else if (r.action === 'skip') await s.mark(r.habitId, 'skipped', r.date);
       else if (r.action === 'later') await s.snooze(r.habitId, r.date);
@@ -73,7 +85,19 @@ export function NotificationBridge() {
 
   // Re-plan when the app comes back to the foreground.
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (st) => st === 'active' && setForegroundTick((t) => t + 1));
+    // Remember when the app is opened (to the half hour): Not landing offers those times.
+    const opened = () => {
+      const d = new Date();
+      const hm = `${String(d.getHours()).padStart(2, '0')}:${d.getMinutes() < 30 ? '00' : '30'}`;
+      const s = storeRef.current;
+      s.updateSettings({ appOpens: [...s.settings.appOpens, hm].slice(-40) });
+    };
+    opened();
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') return;
+      setForegroundTick((t) => t + 1);
+      opened();
+    });
     return () => sub.remove();
   }, []);
 
@@ -93,10 +117,28 @@ export function NotificationBridge() {
         closed: dayCloses.map((c) => c.date),
         better: Object.fromEntries(dayCloses.filter((c) => c.better).map((c) => [c.date, c.better as string])),
       };
-      syncNotifications(planNotifications(habits, idx, ctx, settings.reminders, new Date(), close));
+      // The nudge log is read through the ref: writing it must not start another re-plan.
+      const s = storeRef.current;
+      const nudges = { log: s.nudgeLog, notToday, weeks, horizon: null };
+      const plan = planNotifications(habits, idx, ctx, settings.reminders, new Date(), close, nudges);
+      syncNotifications(plan);
+      s.syncNudgeLog(
+        plan
+          .filter((p) => p.data.type === 'nudge')
+          .map((p) => ({
+            id: p.id,
+            habitId: p.data.habitId as number,
+            date: p.data.date,
+            at: p.at,
+            frame: p.data.frame as Frame,
+            title: p.title,
+            body: p.body,
+            category: p.category ?? '',
+          })),
+      );
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [habits, records, idx, ctx, settings.reminders, dayCloses, foregroundTick]);
+  }, [habits, records, idx, ctx, settings.reminders, dayCloses, notToday, weeks, foregroundTick]);
 
   return null;
 }

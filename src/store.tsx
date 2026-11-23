@@ -6,6 +6,7 @@ import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { addDays, todayKey } from './lib/dates';
 import { isEmptyClose, pageWithClose, type DayClose } from './lib/dayClose';
 import type { NotToday, NotTodayReason } from './lib/notToday';
+import type { NudgeLogRow, PlannedNudge } from './lib/nudges';
 import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
@@ -42,6 +43,8 @@ export interface Settings {
   timerPrefs: { focus: number; meditate: number; meditateHalfway: boolean; keepAwake: boolean };
   /** The day Today's "Yesterday you said…" line was tapped away. */
   betterHiddenOn: string | null;
+  /** Recent times the app was opened (HH:MM, to the half hour), for Not landing's "A different time". */
+  appOpens: string[];
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -54,6 +57,7 @@ const DEFAULT_SETTINGS: Settings = {
   lastTimer: null,
   timerPrefs: { focus: 25, meditate: 10, meditateHalfway: false, keepAwake: true },
   betterHiddenOn: null,
+  appOpens: [],
 };
 
 /**
@@ -77,6 +81,14 @@ interface Store {
   /** Finished Focus rounds (Sunday recap line, round numbering). */
   focusLog: db.FocusLogRow[];
   addFocusRound(minutes: number, startedAt: string, habitId: number | null): Promise<void>;
+  /** Avoid-habit nudges sent or scheduled (the nudge log). */
+  nudgeLog: NudgeLogRow[];
+  /** Write the scheduled nudges to the log (after each re-plan). */
+  syncNudgeLog(planned: PlannedNudge[]): Promise<void>;
+  /** A nudge was tapped or answered. */
+  markNudge(id: string, action: string): Promise<void>;
+  /** Merge fields into an item's meta (voice, quiet for a week, nudge time…). */
+  setHabitMeta(id: number, patch: Record<string, unknown>): Promise<void>;
   /** Not today reasons for avoid habits, oldest first. */
   notToday: NotToday[];
   /** Pass on an avoid habit for a day: marks it skipped and saves the reason. */
@@ -169,12 +181,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [focusLog, setFocusLog] = useState<db.FocusLogRow[]>([]);
   const [dayCloses, setDayCloses] = useState<DayClose[]>([]);
   const [notToday, setNotToday] = useState<NotToday[]>([]);
+  const [nudgeLog, setNudgeLog] = useState<NudgeLogRow[]>([]);
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o, pr, fl, dc, nt] = await Promise.all([
+    const [h, r, p, w, o, pr, fl, dc, nt, nl] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
@@ -184,7 +197,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       db.loadFocusLog(),
       db.loadDayCloses(),
       db.loadNotToday(),
+      db.loadNudgeLog(),
     ]);
+    setNudgeLog(nl);
     setNotToday(nt);
     setDayCloses(dc);
     setPriorities(pr);
@@ -240,6 +255,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       focusLog,
       async addFocusRound(minutes, startedAt, habitId) {
         await db.addFocusRound(today, startedAt, minutes, habitId);
+        await reload();
+      },
+      nudgeLog,
+      async syncNudgeLog(planned) {
+        await db.syncNudgeLog(planned, new Date());
+        setNudgeLog(await db.loadNudgeLog());
+      },
+      async markNudge(id, action) {
+        await db.markNudgeOpened(id, action);
+        setNudgeLog(await db.loadNudgeLog());
+      },
+      async setHabitMeta(id, patch) {
+        await db.setHabitMeta(id, patch);
         await reload();
       },
       notToday,
@@ -446,6 +474,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       focusLog,
       dayCloses,
       notToday,
+      nudgeLog,
       afterPrompt,
       idx,
       ctx,
