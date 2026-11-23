@@ -7,6 +7,7 @@ import * as SystemUI from 'expo-system-ui';
 import { StoreProvider, useStore } from '../store';
 import { useTheme } from '../theme';
 import { NotificationBridge } from '../components/NotificationBridge';
+import { NowGate } from '../components/NowGate';
 
 function ThemedStack() {
   const { ready } = useStore();
@@ -27,9 +28,11 @@ function ThemedStack() {
     <>
       <StatusBar style={t.dark ? 'light' : 'dark'} />
       <NotificationBridge />
+      <NowGate />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.background } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="now" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
         <Stack.Screen name="tempted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="close" options={{ presentation: 'modal' }} />
         <Stack.Screen name="nottoday" options={{ presentation: 'modal' }} />

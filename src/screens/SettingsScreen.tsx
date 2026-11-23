@@ -232,6 +232,16 @@ export function SettingsScreen() {
           />
         </View>
 
+        <Text style={[s.group, { marginTop: 32 }]}>Opening screen</Text>
+        <View style={{ marginTop: 10 }}>
+          <Toggle
+            label="Now page"
+            note="When you open the app, or come back after 5 minutes away: what this moment is for. Tap or swipe up for Today."
+            value={settings.nowPage}
+            onChange={(v) => updateSettings({ nowPage: v })}
+          />
+        </View>
+
         <Text style={[s.group, { marginTop: 32 }]}>Check-off</Text>
         <View style={{ marginTop: 10 }}>
           <Toggle

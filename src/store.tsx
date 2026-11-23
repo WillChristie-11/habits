@@ -46,6 +46,8 @@ export interface Settings {
   betterHiddenOn: string | null;
   /** Recent times the app was opened (HH:MM, to the half hour), for Not landing's "A different time". */
   appOpens: string[];
+  /** Show the Now page on opening (and after 5+ minutes away). */
+  nowPage: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -59,6 +61,7 @@ const DEFAULT_SETTINGS: Settings = {
   timerPrefs: { focus: 25, meditate: 10, meditateHalfway: false, keepAwake: true },
   betterHiddenOn: null,
   appOpens: [],
+  nowPage: true,
 };
 
 /**
