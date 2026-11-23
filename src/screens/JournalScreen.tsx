@@ -22,6 +22,7 @@ import { recapLines, weekCounts } from '../lib/journal';
 import { focusRecapLine } from '../lib/timers';
 import { betterRecap } from '../lib/dayClose';
 import { HabitForm } from './HabitForm';
+import { DirectionRecap, hasDirection } from '../components/DirectionRecap';
 import { wakeAnchor, wakeWeek, minutesOfDay } from '../lib/insights';
 import { WEEKDAY_NAMES, WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { useTheme, useThemedStyles, type Theme } from '../theme';
@@ -294,9 +295,11 @@ function WeekStrip({
 function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences, focusLog, dayCloses } = useStore();
+  const store = useStore();
+  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences, focusLog, dayCloses } = store;
   const focusLine = focusRecapLine(focusLog, weekDays(sunday));
   const better = betterRecap(dayCloses, weekDays(sunday));
+  const direction = hasDirection(sunday, store);
   const [habitFrom, setHabitFrom] = useState<string | null>(null);
   const counts = weekCounts(habits, idx, ctx, sunday, occurrences);
   const lines = recapLines(pages, sunday);
@@ -313,7 +316,8 @@ function SundayRecap({ sunday }: { sunday: string }) {
     !weeks[nextWeek] &&
     !wake.text &&
     !focusLine &&
-    !better.lines.length
+    !better.lines.length &&
+    !direction
   )
     return null;
   return (
@@ -370,12 +374,7 @@ function SundayRecap({ sunday }: { sunday: string }) {
           {l.line}
         </Text>
       ))}
-      {thisWeek && (
-        <Text style={s.recapLine}>
-          <Text style={s.recapDay}>Last week was for </Text>
-          {thisWeek}
-        </Text>
-      )}
+      <DirectionRecap sunday={sunday} editable={editable} />
       {editable ? (
         <TextInput
           value={next}

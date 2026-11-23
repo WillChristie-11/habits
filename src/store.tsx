@@ -7,6 +7,7 @@ import { addDays, todayKey } from './lib/dates';
 import { isEmptyClose, pageWithClose, type DayClose } from './lib/dayClose';
 import type { NotToday, NotTodayReason } from './lib/notToday';
 import type { NudgeLogRow, PlannedNudge } from './lib/nudges';
+import type { WeekOutcome } from './lib/direction';
 import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
@@ -81,6 +82,12 @@ interface Store {
   /** Finished Focus rounds (Sunday recap line, round numbering). */
   focusLog: db.FocusLogRow[];
   addFocusRound(minutes: number, startedAt: string, habitId: number | null): Promise<void>;
+  /** Monthly horizon lines by month ("2026-11"). */
+  months: Record<string, string>;
+  saveMonth(month: string, line: string): Promise<void>;
+  /** How each week's intention went, by week start. */
+  weekOutcomes: Record<string, WeekOutcome>;
+  saveWeekOutcome(weekStart: string, outcome: WeekOutcome): Promise<void>;
   /** Avoid-habit nudges sent or scheduled (the nudge log). */
   nudgeLog: NudgeLogRow[];
   /** Write the scheduled nudges to the log (after each re-plan). */
@@ -182,12 +189,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [dayCloses, setDayCloses] = useState<DayClose[]>([]);
   const [notToday, setNotToday] = useState<NotToday[]>([]);
   const [nudgeLog, setNudgeLog] = useState<NudgeLogRow[]>([]);
+  const [months, setMonths] = useState<Record<string, string>>({});
+  const [weekOutcomes, setWeekOutcomes] = useState<Record<string, WeekOutcome>>({});
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o, pr, fl, dc, nt, nl] = await Promise.all([
+    const [h, r, p, w, o, pr, fl, dc, nt, nl, mo, wo] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
@@ -198,7 +207,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       db.loadDayCloses(),
       db.loadNotToday(),
       db.loadNudgeLog(),
+      db.loadMonths(),
+      db.loadWeekOutcomes(),
     ]);
+    setMonths(mo);
+    setWeekOutcomes(wo);
     setNudgeLog(nl);
     setNotToday(nt);
     setDayCloses(dc);
@@ -256,6 +269,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       async addFocusRound(minutes, startedAt, habitId) {
         await db.addFocusRound(today, startedAt, minutes, habitId);
         await reload();
+      },
+      months,
+      async saveMonth(month, line) {
+        await db.saveMonth(month, line);
+        setMonths(await db.loadMonths());
+      },
+      weekOutcomes,
+      async saveWeekOutcome(weekStart, outcome) {
+        await db.saveWeekOutcome(weekStart, outcome);
+        setWeekOutcomes(await db.loadWeekOutcomes());
       },
       nudgeLog,
       async syncNudgeLog(planned) {
@@ -475,6 +498,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       dayCloses,
       notToday,
       nudgeLog,
+      months,
+      weekOutcomes,
       afterPrompt,
       idx,
       ctx,

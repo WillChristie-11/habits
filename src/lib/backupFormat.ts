@@ -18,6 +18,8 @@ export const BACKUP_TABLES = [
   'day_close',
   'not_today',
   'nudge_log',
+  'months',
+  'week_outcomes',
 ] as const;
 
 export interface Backup {

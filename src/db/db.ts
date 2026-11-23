@@ -17,6 +17,7 @@ import { BACKUP_APP, type Backup } from '../lib/backupFormat';
 import type { DayClose } from '../lib/dayClose';
 import { isReason, type NotToday, type NotTodayReason } from '../lib/notToday';
 import type { NudgeLogRow, PlannedNudge } from '../lib/nudges';
+import { isOutcome, type WeekOutcome } from '../lib/direction';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -25,7 +26,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -262,6 +263,21 @@ async function open() {
         sent_at TEXT NOT NULL,
         opened_at TEXT,
         action TEXT
+      );
+    `);
+  }
+  if (version < 17) {
+    // v17: the monthly horizon line, and how last week's intention went (Sunday recap).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS months (
+        month TEXT PRIMARY KEY,
+        line TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS week_outcomes (
+        week_start TEXT PRIMARY KEY,
+        outcome TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
     `);
   }
@@ -889,4 +905,49 @@ export async function setHabitMeta(id: number, patch: Record<string, unknown>): 
   const meta = { ...(parseMeta(row?.meta ?? null) ?? {}), ...patch };
   for (const k of Object.keys(meta)) if (meta[k] === undefined) delete meta[k];
   await db.runAsync('UPDATE habits SET meta = ? WHERE id = ?', JSON.stringify(meta), id);
+}
+
+// --- Direction: monthly horizon and week outcomes ------------------------------------------------
+
+export async function loadMonths(): Promise<Record<string, string>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ month: string; line: string }>('SELECT month, line FROM months');
+  return Object.fromEntries(rows.map((r) => [r.month, r.line]));
+}
+
+/** One horizon line per month; empty removes it. */
+export async function saveMonth(month: string, line: string): Promise<void> {
+  const db = await getDb();
+  if (!line.trim()) {
+    await db.runAsync('DELETE FROM months WHERE month = ?', month);
+    return;
+  }
+  await db.runAsync(
+    `INSERT INTO months (month, line, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (month) DO UPDATE SET line = excluded.line, updated_at = excluded.updated_at`,
+    month,
+    line.trim(),
+    new Date().toISOString(),
+  );
+}
+
+export async function loadWeekOutcomes(): Promise<Record<string, WeekOutcome>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ week_start: string; outcome: string }>(
+    'SELECT week_start, outcome FROM week_outcomes',
+  );
+  return Object.fromEntries(
+    rows.filter((r) => isOutcome(r.outcome)).map((r) => [r.week_start, r.outcome as WeekOutcome]),
+  );
+}
+
+export async function saveWeekOutcome(weekStart: string, outcome: WeekOutcome): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO week_outcomes (week_start, outcome, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (week_start) DO UPDATE SET outcome = excluded.outcome, updated_at = excluded.updated_at`,
+    weekStart,
+    outcome,
+    new Date().toISOString(),
+  );
 }

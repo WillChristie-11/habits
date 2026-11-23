@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { planNotifications } from '../lib/reminders';
 import { windDownAnchor } from '../lib/dayClose';
 import { REASON_REPLY, type Frame } from '../lib/nudges';
+import { horizonOn } from '../lib/direction';
 import {
   initNotifications,
   listenForResponses,
@@ -23,7 +24,7 @@ const SYNC_DEBOUNCE_MS = 400;
  */
 export function NotificationBridge() {
   const store = useStore();
-  const { habits, records, idx, ctx, settings, dayCloses, notToday, weeks } = store;
+  const { habits, records, idx, ctx, settings, dayCloses, notToday, weeks, months } = store;
   const [foregroundTick, setForegroundTick] = useState(0);
 
   // Latest store for the response listener, which is registered once.
@@ -119,7 +120,7 @@ export function NotificationBridge() {
       };
       // The nudge log is read through the ref: writing it must not start another re-plan.
       const s = storeRef.current;
-      const nudges = { log: s.nudgeLog, notToday, weeks, horizon: null };
+      const nudges = { log: s.nudgeLog, notToday, weeks, horizon: horizonOn(months, ctx.today)?.line ?? null };
       const plan = planNotifications(habits, idx, ctx, settings.reminders, new Date(), close, nudges);
       syncNotifications(plan);
       s.syncNudgeLog(
@@ -138,7 +139,7 @@ export function NotificationBridge() {
       );
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [habits, records, idx, ctx, settings.reminders, dayCloses, notToday, weeks, foregroundTick]);
+  }, [habits, records, idx, ctx, settings.reminders, dayCloses, notToday, weeks, months, foregroundTick]);
 
   return null;
 }
