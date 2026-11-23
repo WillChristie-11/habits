@@ -5,6 +5,7 @@ import * as db from './db/db';
 import { indexRecords, type Ctx, type RecordIndex } from './lib/schedule';
 import { addDays, todayKey } from './lib/dates';
 import { isEmptyClose, pageWithClose, type DayClose } from './lib/dayClose';
+import type { NotToday, NotTodayReason } from './lib/notToday';
 import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
@@ -76,6 +77,10 @@ interface Store {
   /** Finished Focus rounds (Sunday recap line, round numbering). */
   focusLog: db.FocusLogRow[];
   addFocusRound(minutes: number, startedAt: string, habitId: number | null): Promise<void>;
+  /** Not today reasons for avoid habits, oldest first. */
+  notToday: NotToday[];
+  /** Pass on an avoid habit for a day: marks it skipped and saves the reason. */
+  passToday(h: Habit, date: string, reason: NotTodayReason | null, note?: string | null): Promise<void>;
   /** Closed days (Close the day), oldest first. */
   dayCloses: DayClose[];
   /**
@@ -163,12 +168,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [priorities, setPriorities] = useState<Priority[]>([]);
   const [focusLog, setFocusLog] = useState<db.FocusLogRow[]>([]);
   const [dayCloses, setDayCloses] = useState<DayClose[]>([]);
+  const [notToday, setNotToday] = useState<NotToday[]>([]);
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o, pr, fl, dc] = await Promise.all([
+    const [h, r, p, w, o, pr, fl, dc, nt] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
@@ -177,7 +183,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       db.loadPriorities(),
       db.loadFocusLog(),
       db.loadDayCloses(),
+      db.loadNotToday(),
     ]);
+    setNotToday(nt);
     setDayCloses(dc);
     setPriorities(pr);
     setFocusLog(fl);
@@ -232,6 +240,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       focusLog,
       async addFocusRound(minutes, startedAt, habitId) {
         await db.addFocusRound(today, startedAt, minutes, habitId);
+        await reload();
+      },
+      notToday,
+      async passToday(h, date, reason, note = null) {
+        await db.setRecord(h.id, date, 'skipped', null, null);
+        if (reason) await db.addNotToday(h.id, date, reason, note?.trim() || null);
         await reload();
       },
       dayCloses,
@@ -431,6 +445,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       priorities,
       focusLog,
       dayCloses,
+      notToday,
       afterPrompt,
       idx,
       ctx,

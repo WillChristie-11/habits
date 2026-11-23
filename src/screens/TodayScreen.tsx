@@ -16,6 +16,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
 import { Priorities } from '../components/Priorities';
 import { WeekIntentionLine, YesterdayBetterLine } from '../components/WeekIntention';
+import { DoorCard } from '../components/DoorCard';
 import { LogRow } from '../components/LogRow';
 import { AnchorRow } from '../components/AnchorRow';
 import { SwipeRow } from '../components/SwipeRow';
@@ -84,6 +85,7 @@ export function TodayScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* Today's priorities sit at the very top (a past day shows the ones checked that day). */}
+        {isToday && <DoorCard />}
         <Priorities date={date} />
         {showNow && (
           <NowView

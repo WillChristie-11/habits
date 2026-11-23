@@ -2,7 +2,7 @@
 // summaries) and the Sunday recap's sleep line. Nothing here is a score or a streak.
 import type { Habit, Occurrence } from '../types';
 import { FEELINGS } from '../types';
-import type { RecordIndex } from './schedule';
+import { stateOn, visibleOn, type Ctx, type RecordIndex } from './schedule';
 import { formatTime } from './dates';
 
 /** Ratings needed on each side before the contrast is shown. */
@@ -150,4 +150,42 @@ export function keptLines(h: Pick<Habit, 'id'>, idx: RecordIndex): { date: strin
     .filter((r) => r.meta?.keepLine === true && typeof r.meta?.note === 'string' && r.meta.note.trim())
     .map((r) => ({ date: r.date, text: String(r.meta!.note).trim() }))
     .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// --- Today's door ------------------------------------------------------------------------------
+
+export type DoorState = 'open' | 'opened' | 'not_today';
+
+/**
+ * The one avoid habit Today's door card offers: among avoid habits due today, the one started
+ * least this week (days before today, so the pick holds once it's opened), ties going to the one
+ * not started for longest. `state` collapses the card after a session ('opened') or a skip.
+ * Null when no avoid habit is due today.
+ */
+export function doorPick(
+  habits: Habit[],
+  idx: RecordIndex,
+  ctx: Ctx,
+  weekStartKey: string,
+): { habit: Habit; state: DoorState } | null {
+  const due = habits.filter(
+    (h) =>
+      h.kind === 'habit' &&
+      h.habit_kind === 'avoid' &&
+      visibleOn(h, idx, ctx, ctx.today) &&
+      stateOn(h, idx, ctx.today, ctx) !== 'paused',
+  );
+  if (!due.length) return null;
+  const started = (h: Habit) => {
+    const recs = [...(idx.get(h.id)?.values() ?? [])].filter((r) => r.status === 'done' && r.date < ctx.today);
+    return {
+      week: recs.filter((r) => r.date >= weekStartKey).length,
+      last: recs.reduce((m, r) => (r.date > m ? r.date : m), ''),
+    };
+  };
+  const scored = due.map((h) => ({ h, ...started(h) }));
+  scored.sort((a, b) => a.week - b.week || a.last.localeCompare(b.last) || a.h.order - b.h.order || a.h.id - b.h.id);
+  const habit = scored[0].h;
+  const s = stateOn(habit, idx, ctx.today, ctx);
+  return { habit, state: s === 'done' ? 'opened' : s === 'skipped' ? 'not_today' : 'open' };
 }

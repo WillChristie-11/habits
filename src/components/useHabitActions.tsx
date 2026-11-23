@@ -81,6 +81,9 @@ export function useHabitActions(date?: string) {
   const skip = useCallback(
     async (h: Habit) => {
       Haptics.selectionAsync().catch(() => {});
+      // Avoid habits: "Not today is allowed. What's in the way?" (the sheet does the skip).
+      if (h.kind === 'habit' && h.habit_kind === 'avoid')
+        return void router.push({ pathname: '/nottoday', params: { habitId: String(h.id), date: day } });
       await mark(h.id, 'skipped', day);
       if (h.kind === 'habit' && h.habit_kind === 'want')
         setAfterPrompt({ habitId: h.id, date: day, feelings: true, note: false, reason: 'skip' });

@@ -201,7 +201,7 @@ export function AvoidAfterCard({
 }
 
 /** The last sessions: expected (hollow) and felt (filled) on the 1–5 scale; 5 Dread at the top. */
-function PairDots({
+export function PairDots({
   pairs,
   hollow,
   filled,

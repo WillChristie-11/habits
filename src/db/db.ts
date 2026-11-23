@@ -15,6 +15,7 @@ import { entryToLines } from '../lib/journal';
 import { defaultAnchors } from '../lib/defaults';
 import { BACKUP_APP, type Backup } from '../lib/backupFormat';
 import type { DayClose } from '../lib/dayClose';
+import { isReason, type NotToday, type NotTodayReason } from '../lib/notToday';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -23,7 +24,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -233,6 +234,19 @@ async function open() {
         action TEXT,
         better TEXT,
         closed_at TEXT NOT NULL
+      );
+    `);
+  }
+  if (version < 15) {
+    // v15: Not today reasons for avoid habits (never counted against the habit).
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS not_today (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        habit_id INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL
       );
     `);
   }
@@ -781,6 +795,26 @@ export async function saveDayClose(c: DayClose): Promise<void> {
     c.reflection,
     c.action,
     c.better,
+    new Date().toISOString(),
+  );
+}
+
+// --- Not today --------------------------------------------------------------------------------
+
+export async function loadNotToday(): Promise<NotToday[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<NotToday>('SELECT id, habit_id, date, reason, note FROM not_today ORDER BY id');
+  return rows.filter((r) => isReason(r.reason));
+}
+
+export async function addNotToday(habitId: number, date: string, reason: NotTodayReason, note: string | null) {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO not_today (habit_id, date, reason, note, created_at) VALUES (?, ?, ?, ?, ?)',
+    habitId,
+    date,
+    reason,
+    note,
     new Date().toISOString(),
   );
 }

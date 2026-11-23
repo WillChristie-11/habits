@@ -19,10 +19,12 @@ export function WeighScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
-  const params = useLocalSearchParams<{ habitId: string; date?: string }>();
+  const params = useLocalSearchParams<{ habitId: string; date?: string; minutes?: string }>();
   const { habits, setLadder } = useStore();
   const habit = habits.find((h) => h.id === Number(params.habitId));
   const timerStart = useTimerStart();
+  // The door's "Just open it" asks for a short round; otherwise Focus 25.
+  const minutes = Number(params.minutes) || FROM_HABIT.focus;
   const [dread, setDread] = useState<number | null>(null);
   const [asking, setAsking] = useState(false);
   const [smaller, setSmaller] = useState('');
@@ -60,7 +62,7 @@ export function WeighScreen() {
   const start = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     // The Focus round is the session: it counts the moment it starts.
-    timerStart('focus', FROM_HABIT.focus, habit.id, { dread, replace: true });
+    timerStart('focus', minutes, habit.id, { dread, replace: true });
   };
 
   return (
@@ -99,7 +101,7 @@ export function WeighScreen() {
 
         <View style={s.card}>
           <Text style={s.cardLabel}>The only step</Text>
-          <Text style={s.step}>{step ?? `Focus ${FROM_HABIT.focus} on ${habit.name.toLowerCase()}`}</Text>
+          <Text style={s.step}>{step ?? `Focus ${minutes} on ${habit.name.toLowerCase()}`}</Text>
           {asking ? (
             <View style={{ gap: 8, marginTop: 10 }}>
               <Text style={s.ask}>What’s a smaller first move?</Text>
@@ -135,7 +137,7 @@ export function WeighScreen() {
         {habit.pair_with && <Text style={s.pair}>with {habit.pair_with}</Text>}
       </ScrollView>
 
-      <Button title={`Focus · ${FROM_HABIT.focus}`} onPress={start} />
+      <Button title={`Focus · ${minutes}`} onPress={start} />
     </View>
   );
 }
