@@ -3,8 +3,8 @@
 
 export type TimerKind = 'focus' | 'meditate';
 
-export const FOCUS_LENGTHS = [15, 25, 45, 50] as const;
-export const MEDITATE_LENGTHS = [5, 10, 15, 20] as const;
+export const FOCUS_LENGTHS = [5, 15, 25, 50] as const;
+export const MEDITATE_LENGTHS = [1, 3, 5, 10, 20] as const;
 export const DEFAULT_MINUTES: Record<TimerKind, number> = { focus: 25, meditate: 10 };
 export const ROUNDS_PER_SET = 4;
 export const SHORT_BREAK = 5;

@@ -14,8 +14,6 @@ import { WeekStrip } from '../components/WeekStrip';
 import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
-import { ResetButton } from '../components/ResetButton';
-import { TimersButton } from '../components/TimersButton';
 import { Priorities } from '../components/Priorities';
 import { WeekIntentionLine } from '../components/WeekIntention';
 import { LogRow } from '../components/LogRow';
@@ -76,14 +74,6 @@ export function TodayScreen() {
               <ProgressRing done={ring.done} total={ring.total} />
             </Pressable>
           ) : null
-        }
-        below={
-          isToday ? (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <ResetButton />
-              <TimersButton />
-            </View>
-          ) : undefined
         }
         links={isToday ? [] : [{ label: '← Back to today', onPress: () => setPicked(null), strong: true }]}
       />

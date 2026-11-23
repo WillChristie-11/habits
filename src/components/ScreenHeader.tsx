@@ -9,7 +9,7 @@ interface Props {
   title: string;
   /** Right side of the title row (e.g. the progress ring). */
   right?: React.ReactNode;
-  /** Shown under the title (the Reset button). */
+  /** Shown under the title. */
   below?: React.ReactNode;
   /** Small text links under the title (e.g. "← Back to today"). */
   links?: { label: string; onPress: () => void; strong?: boolean }[];
