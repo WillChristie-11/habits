@@ -1,10 +1,12 @@
 import React, { useCallback, useState } from 'react';
 import { ActionSheetIOS, Alert, Platform, Text } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import type { DayState, Habit, ItemKind } from '../types';
 import { useStore } from '../store';
 import { stateOn } from '../lib/schedule';
 import { wakeAnchor } from '../lib/insights';
+import { windDownAnchor } from '../lib/dayClose';
 import { promptPriority } from './Priorities';
 import { useHabitTimer } from './useHabitTimer';
 import type { SwipeAction } from './SwipeRow';
@@ -35,6 +37,7 @@ export function useHabitActions(date?: string) {
     setNote,
     priorities,
     addPriority,
+    dayCloses,
   } = useStore();
   const day = date ?? ctx.today;
   const isToday = day === ctx.today;
@@ -61,13 +64,17 @@ export function useHabitActions(date?: string) {
         if (h.kind === 'habit') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
         // Sleep log: tapping Wake up today records the actual time.
         const wake = isToday && wakeAnchor(habits)?.id === h.id;
+        // Checking off Wind down today opens Close the day (once it's saved, not again that day).
+        const windDown = isToday && windDownAnchor(habits)?.id === h.id && !dayCloses.some((c) => c.date === day);
         await mark(h.id, 'done', day, wake ? { wokeAt: hhmm(new Date()) } : null);
+        // Let the anchor's completion animation play, then the sheet.
+        if (windDown) return void setTimeout(() => router.push({ pathname: '/close', params: { date: day } }), 600);
         // Habits get the feeling card; anchors only when they ask what you did.
         if (h.kind === 'habit' || h.ask_note)
           setAfterPrompt({ habitId: h.id, date: day, feelings: h.kind === 'habit', note: h.ask_note, reason: 'done' });
       }
     },
-    [mark, unmark, day, isToday, startTimer, habits, afterPrompt, setAfterPrompt],
+    [mark, unmark, day, isToday, startTimer, habits, dayCloses, afterPrompt, setAfterPrompt],
   );
 
   /** Skip (rest day). Want habits then get a quick "how do you feel today?" for the feeling contrast. */

@@ -85,7 +85,9 @@ function SwipeArea({
 export function JournalScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { pages, ctx } = useStore();
+  const { pages, ctx, dayCloses } = useStore();
+  // Closing the day rewrites today's page; remount the editor so it shows the new lines.
+  const closedStamp = JSON.stringify(dayCloses.find((c) => c.date === ctx.today) ?? null);
   const [picked, setPicked] = useState<string | null>(null);
   const date = picked && picked < ctx.today ? picked : ctx.today; // follows midnight
   const isToday = date === ctx.today;
@@ -131,7 +133,19 @@ export function JournalScreen() {
           </Text>
           {weekday(date) === 0 && <SundayRecap sunday={date} />}
           {isToday ? (
-            <TodayPage key={date} date={date} inputRef={editor} />
+            <>
+              <TodayPage key={`${date}-${closedStamp}`} date={date} inputRef={editor} />
+              <Pressable
+                onPress={() => {
+                  editor.current?.blur(); // saves what was typed
+                  router.push({ pathname: '/close', params: { date } });
+                }}
+                style={({ pressed }) => [s.closeBtn, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+              >
+                <Text style={s.closeText}>Close the day</Text>
+              </Pressable>
+            </>
           ) : pages[date] ? (
             <Text style={s.pageText} selectable>
               {pages[date]}
@@ -403,6 +417,16 @@ const makeStyles = (t: Theme) =>
       fontWeight: '300',
       color: t.journalText,
     },
+    closeBtn: {
+      alignSelf: 'flex-start',
+      marginTop: 20,
+      borderWidth: 1.5,
+      borderColor: t.accent,
+      borderRadius: 18,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+    },
+    closeText: { color: t.accent, fontSize: 15, fontWeight: '600' },
     pageText: {
       paddingHorizontal: 20,
       paddingTop: 12,
