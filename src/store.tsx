@@ -8,6 +8,7 @@ import { isEmptyClose, pageWithClose, type DayClose } from './lib/dayClose';
 import type { NotToday, NotTodayReason } from './lib/notToday';
 import type { NudgeLogRow, PlannedNudge } from './lib/nudges';
 import type { WeekOutcome } from './lib/direction';
+import type { Goal, GoalStep } from './lib/goals';
 import type { DayRecord, Habit, HabitInput, Meta, Occurrence, Priority, RecordStatus, ReminderSettings } from './types';
 import { DEFAULT_REMINDERS } from './types';
 import { SNOOZE_MIN } from './lib/reminders';
@@ -88,6 +89,14 @@ interface Store {
   /** Finished Focus rounds (Sunday recap line, round numbering). */
   focusLog: db.FocusLogRow[];
   addFocusRound(minutes: number, startedAt: string, habitId: number | null): Promise<void>;
+  /** Long-term goals (1–3), in order. */
+  goals: Goal[];
+  saveGoal(g: { id?: number; name: string; why: string | null; links: number[]; order: number }): Promise<void>;
+  removeGoal(id: number): Promise<void>;
+  /** Steps typed toward a goal ("Pick today's step"); each is also a priority. */
+  goalSteps: GoalStep[];
+  addGoalStep(goalId: number, text: string): Promise<void>;
+  setGoalStepStatus(id: number, status: 'open' | 'not_today'): Promise<void>;
   /** Monthly horizon lines by month ("2026-11"). */
   months: Record<string, string>;
   saveMonth(month: string, line: string): Promise<void>;
@@ -202,12 +211,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [nudgeLog, setNudgeLog] = useState<NudgeLogRow[]>([]);
   const [months, setMonths] = useState<Record<string, string>>({});
   const [weekOutcomes, setWeekOutcomes] = useState<Record<string, WeekOutcome>>({});
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
   const [afterPrompt, setAfterPrompt] = useState<AfterPrompt | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [now, setNow] = useState(() => new Date());
 
   const reload = useCallback(async () => {
-    const [h, r, p, w, o, pr, fl, dc, nt, nl, mo, wo] = await Promise.all([
+    const [h, r, p, w, o, pr, fl, dc, nt, nl, mo, wo, go, gs] = await Promise.all([
       db.loadHabits(),
       db.loadRecords(),
       db.loadPages(),
@@ -220,7 +231,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       db.loadNudgeLog(),
       db.loadMonths(),
       db.loadWeekOutcomes(),
+      db.loadGoals(),
+      db.loadGoalSteps(),
     ]);
+    setGoals(go);
+    setGoalSteps(gs);
     setMonths(mo);
     setWeekOutcomes(wo);
     setNudgeLog(nl);
@@ -279,6 +294,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       focusLog,
       async addFocusRound(minutes, startedAt, habitId) {
         await db.addFocusRound(today, startedAt, minutes, habitId);
+        await reload();
+      },
+      goals,
+      async saveGoal(g) {
+        await db.saveGoal(g);
+        await reload();
+      },
+      async removeGoal(id) {
+        await db.deleteGoal(id);
+        await reload();
+      },
+      goalSteps,
+      async addGoalStep(goalId, text) {
+        if (!text.trim()) return;
+        await db.addGoalStep(goalId, today, text);
+        await reload();
+      },
+      async setGoalStepStatus(id, status) {
+        await db.setGoalStepStatus(id, status);
         await reload();
       },
       months,
@@ -515,6 +549,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       nudgeLog,
       months,
       weekOutcomes,
+      goals,
+      goalSteps,
       afterPrompt,
       idx,
       ctx,

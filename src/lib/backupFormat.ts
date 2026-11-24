@@ -20,6 +20,8 @@ export const BACKUP_TABLES = [
   'nudge_log',
   'months',
   'week_outcomes',
+  'goals',
+  'goal_steps',
 ] as const;
 
 export interface Backup {

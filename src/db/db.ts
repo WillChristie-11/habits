@@ -18,6 +18,7 @@ import type { DayClose } from '../lib/dayClose';
 import { isReason, type NotToday, type NotTodayReason } from '../lib/notToday';
 import type { NudgeLogRow, PlannedNudge } from '../lib/nudges';
 import { isOutcome, type WeekOutcome } from '../lib/direction';
+import type { Goal, GoalStep } from '../lib/goals';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -26,7 +27,7 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 async function open() {
   const db = await SQLite.openDatabaseAsync('habits.db');
@@ -278,6 +279,27 @@ async function open() {
         week_start TEXT PRIMARY KEY,
         outcome TEXT NOT NULL,
         updated_at TEXT NOT NULL
+      );
+    `);
+  }
+  if (version < 18) {
+    // v18: goals (replace the weekly intention) and steps typed toward them.
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS goals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        why TEXT,
+        links TEXT NOT NULL DEFAULT '[]',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS goal_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        goal_id INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        text TEXT NOT NULL,
+        priority_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'open'
       );
     `);
   }
@@ -964,4 +986,81 @@ export async function setHabitReminder(
     await db.runAsync('UPDATE habits SET scheduled_time = ? WHERE id = ?', patch.scheduled_time, id);
   if (patch.remind_before != null)
     await db.runAsync('UPDATE habits SET remind_before = ? WHERE id = ?', patch.remind_before, id);
+}
+
+// --- Goals --------------------------------------------------------------------------------------
+
+export async function loadGoals(): Promise<Goal[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    id: number;
+    name: string;
+    why: string | null;
+    links: string;
+    sort_order: number;
+  }>('SELECT id, name, why, links, sort_order FROM goals ORDER BY sort_order, id');
+  return rows.map((r) => {
+    let links: number[] = [];
+    try {
+      const v = JSON.parse(r.links);
+      if (Array.isArray(v)) links = v.filter((x) => typeof x === 'number');
+    } catch {}
+    return { id: r.id, name: r.name, why: r.why, links, order: r.sort_order };
+  });
+}
+
+/** Add (no id) or update a goal. */
+export async function saveGoal(g: { id?: number; name: string; why: string | null; links: number[]; order: number }) {
+  const db = await getDb();
+  if (g.id != null) {
+    await db.runAsync(
+      'UPDATE goals SET name = ?, why = ?, links = ?, sort_order = ? WHERE id = ?',
+      g.name.trim(),
+      g.why?.trim() || null,
+      JSON.stringify(g.links),
+      g.order,
+      g.id,
+    );
+    return;
+  }
+  await db.runAsync(
+    'INSERT INTO goals (name, why, links, sort_order, created_at) VALUES (?, ?, ?, ?, ?)',
+    g.name.trim(),
+    g.why?.trim() || null,
+    JSON.stringify(g.links),
+    g.order,
+    new Date().toISOString(),
+  );
+}
+
+export async function deleteGoal(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM goal_steps WHERE goal_id = ?', id);
+  await db.runAsync('DELETE FROM goals WHERE id = ?', id);
+}
+
+export async function loadGoalSteps(): Promise<GoalStep[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<GoalStep>(
+    'SELECT id, goal_id, date, text, priority_id, status FROM goal_steps ORDER BY date, id',
+  );
+  return rows.map((r) => ({ ...r, status: r.status === 'not_today' ? 'not_today' : 'open' }));
+}
+
+/** A step typed for a day; it also becomes a priority (created that day). */
+export async function addGoalStep(goalId: number, date: string, text: string): Promise<void> {
+  const db = await getDb();
+  const p = await db.runAsync('INSERT INTO priorities (text, created_on) VALUES (?, ?)', text.trim(), date);
+  await db.runAsync(
+    'INSERT INTO goal_steps (goal_id, date, text, priority_id) VALUES (?, ?, ?, ?)',
+    goalId,
+    date,
+    text.trim(),
+    p.lastInsertRowId,
+  );
+}
+
+export async function setGoalStepStatus(id: number, status: 'open' | 'not_today'): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE goal_steps SET status = ? WHERE id = ?', status, id);
 }
