@@ -3,6 +3,7 @@ import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
+import { activityRow } from '../lib/activities';
 import { counts, dayCompletion, periodSummary, progress, timeline, todayGroups, visibleOn } from '../lib/schedule';
 import { WEEKDAY_SHORT, addDays, fromKey, weekDays, weekStart, weekday } from '../lib/dates';
 import { Dot } from './Dots';
@@ -60,6 +61,7 @@ export function WeekStrip({ selected, onSelect }: Props) {
   const tracked = habits
     .filter((h) => counts(h) && days.some((d) => visibleOn(h, idx, ctx, d)))
     .sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
+  const activities = habits.filter((h) => h.kind === 'activity').sort((a, b) => a.order - b.order || a.id - b.id);
 
   return (
     <View style={s.card} {...pan.panHandlers}>
@@ -112,8 +114,8 @@ export function WeekStrip({ selected, onSelect }: Props) {
 
       {grid && (
         <View style={s.grid}>
-          {tracked.length === 0 && <Text style={s.gridEmpty}>No habits this week.</Text>}
-          {tracked.length > 0 && (
+          {tracked.length === 0 && activities.length === 0 && <Text style={s.gridEmpty}>No habits this week.</Text>}
+          {(tracked.length > 0 || activities.length > 0) && (
             <View style={s.gridRow}>
               <View style={{ width: NAME_W }} />
               <View style={s.gridCells}>
@@ -156,6 +158,31 @@ export function WeekStrip({ selected, onSelect }: Props) {
                   ))}
                 </View>
                 <Text style={s.gridPct}>{text}</Text>
+              </View>
+            );
+          })}
+          {/* Activities: a dot on each day logged, and x/goal; never part of the %. */}
+          {activities.map((h) => {
+            const row = activityRow(h, idx, days, ctx.today);
+            return (
+              <View key={h.id} style={s.gridRow}>
+                <Text style={s.gridName} numberOfLines={1}>
+                  {h.name}
+                </Text>
+                <View style={s.gridCells}>
+                  {days.map((d, i) => (
+                    <Pressable
+                      key={d}
+                      disabled={d > ctx.today}
+                      onPress={() => onSelect(d)}
+                      style={s.gridCell}
+                      hitSlop={2}
+                    >
+                      <Dot state={row.dots[i] ? 'done' : 'none'} size={13} />
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={s.gridPct}>{row.label}</Text>
               </View>
             );
           })}
