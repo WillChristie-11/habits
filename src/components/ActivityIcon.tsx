@@ -1,42 +1,24 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import { guessIcon, isSymbolName } from '../lib/activityIcons';
 import type { Habit } from '../types';
 import { onTile, tileColors } from '../theme';
 
-/** SF Symbols offered when creating an activity. */
-export const ACTIVITY_ICONS = [
-  'figure.run',
-  'bicycle',
-  'figure.walk',
-  'figure.pool.swim',
-  'dumbbell',
-  'figure.yoga',
-  'figure.hiking',
-  'figure.strengthtraining.traditional',
-  'sportscourt',
-  'guitars',
-  'music.note',
-  'book',
-  'paintbrush',
-  'leaf',
-  'brain.head.profile',
-  'heart',
-] as const satisfies readonly SymbolViewProps['name'][];
+/** Any SF Symbol name ("figure.run", "book"); suggestions live in lib/activityIcons. */
+export type ActivityIconName = string;
 
-export type ActivityIconName = (typeof ACTIVITY_ICONS)[number];
-
-/** An activity's colour and SF Symbol (stored in its meta), with stable defaults for older ones. */
-export function activityLook(h: Pick<Habit, 'id' | 'meta'>): { color: string; icon: ActivityIconName } {
+/**
+ * An activity's colour and SF Symbol (stored in its meta). Without a saved icon, one is guessed
+ * from its name ("Reading" gets a book); older activities get a stable colour.
+ */
+export function activityLook(h: Pick<Habit, 'id' | 'meta' | 'name'>): { color: string; icon: ActivityIconName } {
   const m = (h.meta ?? {}) as { color?: unknown; icon?: unknown };
   const color =
     typeof m.color === 'string' && (tileColors as readonly string[]).includes(m.color)
       ? m.color
       : tileColors[Math.abs(h.id) % tileColors.length];
-  const icon =
-    typeof m.icon === 'string' && (ACTIVITY_ICONS as readonly string[]).includes(m.icon)
-      ? (m.icon as ActivityIconName)
-      : 'figure.run';
+  const icon = isSymbolName(m.icon) ? m.icon.trim() : guessIcon(h.name);
   return { color, icon };
 }
 
@@ -56,7 +38,7 @@ export function ActivityIcon({
   return (
     <View style={[styles.box, { width: size, height: size, borderRadius: size * 0.28, backgroundColor: color }]}>
       <SymbolView
-        name={icon}
+        name={icon as SymbolViewProps['name']}
         size={size * 0.5}
         tintColor={onTile}
         fallback={

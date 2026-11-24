@@ -12,7 +12,8 @@ import { suggestPlanWhen } from '../lib/reminders';
 import { MessageList } from '../components/MessageList';
 import { StepList } from '../components/StepList';
 import { tileColors, useTheme, useThemedStyles, type Theme } from '../theme';
-import { ACTIVITY_ICONS, ActivityIcon, activityLook, type ActivityIconName } from '../components/ActivityIcon';
+import { ActivityIcon, activityLook } from '../components/ActivityIcon';
+import { ICON_SUGGESTIONS, guessIcon, isSymbolName } from '../lib/activityIcons';
 
 interface Props {
   visible: boolean;
@@ -109,11 +110,14 @@ function FormBody({
   const [locked, setLocked] = useState(habit?.locked ?? false);
   const [more, setMore] = useState(false);
   const [timerLink, setTimerLink] = useState<TimerKind | null>(linkedTimer(habit?.meta));
-  const look = habit
-    ? activityLook(habit)
-    : { color: tileColors[0] as string, icon: ACTIVITY_ICONS[0] as ActivityIconName };
+  const look = habit ? activityLook(habit) : { color: tileColors[0] as string };
   const [tileColor, setTileColor] = useState<string>(look.color);
-  const [tileIcon, setTileIcon] = useState<ActivityIconName>(look.icon);
+  // The chosen SF Symbol; until one is chosen, it follows the name ("Reading" → book).
+  const [pickedIcon, setPickedIcon] = useState<string | null>(
+    isSymbolName(habit?.meta?.icon) ? (habit!.meta!.icon as string) : null,
+  );
+  const [typedIcon, setTypedIcon] = useState('');
+  const tileIcon = pickedIcon ?? guessIcon(name);
 
   async function toggleReminder(on: boolean) {
     setReminder(on);
@@ -344,10 +348,13 @@ function FormBody({
               ))}
             </View>
             <View style={s.icons}>
-              {ACTIVITY_ICONS.map((ic) => (
+              {ICON_SUGGESTIONS.map((ic) => (
                 <Pressable
                   key={ic}
-                  onPress={() => setTileIcon(ic)}
+                  onPress={() => {
+                    setPickedIcon(ic);
+                    setTypedIcon('');
+                  }}
                   style={[s.iconPick, tileIcon === ic && s.iconPickOn]}
                   accessibilityRole="button"
                   accessibilityState={{ selected: tileIcon === ic }}
@@ -362,6 +369,22 @@ function FormBody({
                 </Pressable>
               ))}
             </View>
+            <View style={s.customIcon}>
+              <ActivityIcon color={tileColor} icon={tileIcon} size={40} label={name || '•'} />
+              <View style={{ flex: 1 }}>
+                <Input
+                  value={typedIcon}
+                  onChangeText={(v) => {
+                    setTypedIcon(v);
+                    if (isSymbolName(v)) setPickedIcon(v.trim());
+                  }}
+                  placeholder="Or any SF Symbol, e.g. figure.skiing.downhill"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+            <Help>Names come from Apple’s SF Symbols app. Without a choice, the icon follows the name.</Help>
 
             <Label>Unit</Label>
             <Segmented<ActivityUnit | 'none'>
@@ -738,6 +761,7 @@ const makeStyles = (t: Theme) =>
     swatch: { width: 34, height: 34, borderRadius: 17, borderWidth: 3, borderColor: t.background },
     swatchOn: { borderColor: t.text },
     icons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+    customIcon: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 6 },
     iconPick: { padding: 3, borderRadius: 14, borderWidth: 2, borderColor: 'transparent' },
     iconPickOn: { borderColor: t.text },
     targetRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' },
