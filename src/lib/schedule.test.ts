@@ -291,7 +291,7 @@ test('Today groups: anchors in time order with their habits, then Anytime and Th
   const wake = habit({ type: 'daily' }, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
   const water = habit({ type: 'daily' }, { name: 'water', stack_after: wake.id });
   const vit = habit({ type: 'daily' }, { name: 'vitamins', stack_after: water.id });
-  const pills = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15' }); // timed, no anchor
+  const pills = habit({ type: 'daily' }, { name: 'pills', scheduled_time: '08:15' }); // timed, no anchor → timeline
   const read = habit({ type: 'daily' }, { name: 'read' });
   const lift = habit({ type: 'weekly_count', count: 2 }, { name: 'lift', stack_after: work.id }); // weekly wins
   const all = [read, work, pills, vit, water, wake, lift];
@@ -304,6 +304,7 @@ test('Today groups: anchors in time order with their habits, then Anytime and Th
         [
           ['water', 0],
           ['vitamins', 1],
+          ['pills', 0], // timed, no anchor: on the timeline under the anchor before it
         ],
       ],
       ['Work', []],
@@ -311,7 +312,7 @@ test('Today groups: anchors in time order with their habits, then Anytime and Th
   );
   assert.deepEqual(
     g.anytime.map((r) => r.habit.name),
-    ['pills', 'read'],
+    ['read'],
   );
   assert.deepEqual(
     g.week.map((r) => r.habit.name),
@@ -324,10 +325,15 @@ test('Today groups: anchors in time order with their habits, then Anytime and Th
   assert.equal(groupLabel(read, all), 'Anytime');
   assert.equal(groupLabel(lift, all), 'This week');
   // An anchor that isn't on today: its habits fall back to Anytime.
+  // A timed habit still goes on the timeline: under the first anchor when it's earlier than all.
   const g2 = todayGroups(all, (h) => h !== wake);
   assert.deepEqual(
     g2.anytime.map((r) => r.habit.name),
-    ['water', 'vitamins', 'pills', 'read'],
+    ['water', 'vitamins', 'read'],
+  );
+  assert.deepEqual(
+    g2.anchors.map((a) => [a.anchor.name, a.rows.map((r) => r.habit.name)]),
+    [['Work', ['pills']]],
   );
 });
 
@@ -343,4 +349,29 @@ test('fresh installs start with three editable daily anchors', async () => {
     ],
   );
   assert.ok(a.every((x) => x.ready_minutes === 3 && x.frequency.type === 'daily'));
+});
+
+test('today groups: a timed habit without an anchor goes on the timeline, not Anytime', async () => {
+  const { todayGroups } = await import('./schedule');
+  const { habit } = await import('./testing');
+  const daily = { type: 'daily' } as const;
+  const wake = habit(daily, { kind: 'anchor', name: 'Wake up', scheduled_time: '07:00' });
+  const work = habit(daily, { kind: 'anchor', name: 'Work block', scheduled_time: '09:00', end_time: '17:00' });
+  const stretch = habit(daily, { name: 'Stretch', stack_after: work.id });
+  const exercise = habit(daily, { name: 'Exercise', scheduled_time: '17:00' });
+  const lunch = habit(daily, { name: 'Walk', scheduled_time: '12:30' });
+  const early = habit(daily, { name: 'Pills', scheduled_time: '06:00' });
+  const read = habit(daily, { name: 'Read' });
+  const g = todayGroups([wake, work, stretch, exercise, lunch, early, read], () => true);
+  assert.deepEqual(
+    g.anchors.map((a) => [a.anchor.name, a.rows.map((r) => r.habit.name)]),
+    [
+      ['Wake up', ['Pills']],
+      ['Work block', ['Stretch', 'Walk', 'Exercise']],
+    ],
+  );
+  assert.deepEqual(
+    g.anytime.map((r) => r.habit.name),
+    ['Read'],
+  );
 });

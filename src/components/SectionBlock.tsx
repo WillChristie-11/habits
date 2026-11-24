@@ -22,6 +22,8 @@ interface Props {
   date?: string;
   /** Rows sit tighter under an anchor header. */
   nested?: boolean;
+  /** Show each row's time (off for Anytime, where items have none). */
+  showTime?: boolean;
 }
 
 /** A group on Today: header, then rows you can swipe (Edit / Skip, Delete) and long-press to drag. */
@@ -36,6 +38,7 @@ export function SectionBlock({
   swipeActions,
   date,
   nested,
+  showTime = true,
 }: Props) {
   const { ctx } = useStore();
   const day = date ?? ctx.today;
@@ -60,7 +63,7 @@ export function SectionBlock({
               <HabitRow
                 row={row}
                 date={day}
-                showTime
+                showTime={showTime}
                 onToggle={(st) => onToggle(row.habit, st)}
                 onOpen={() => onOpen(row.habit)}
               />

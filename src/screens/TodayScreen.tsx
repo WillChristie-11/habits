@@ -147,7 +147,7 @@ export function TodayScreen() {
                     />
                   );
                 })}
-                <SectionBlock {...common} title="Anytime" rows={groups.anytime} />
+                <SectionBlock {...common} title="Anytime" rows={groups.anytime} showTime={false} />
                 <SectionBlock {...common} title="This week" rows={groups.week} />
               </>
             )}

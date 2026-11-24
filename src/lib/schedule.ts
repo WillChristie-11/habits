@@ -321,7 +321,12 @@ export interface AnchorGroup {
   rows: Row[];
 }
 
-/** Today: one group per anchor in time order, then Anytime and This week. */
+/**
+ * Today: one group per anchor in time order, then Anytime and This week. A habit with its own
+ * time (and no anchor) goes on the timeline, under the last anchor at or before its time (the
+ * first anchor if it's earlier than all of them), after that anchor's stacked habits, in time
+ * order. Anytime keeps only untimed items.
+ */
 export function todayGroups(habits: Habit[], visible: (h: Habit) => boolean) {
   const l = layoutDay(habits, visible, { timeline: 'anchors' });
   const anchors: AnchorGroup[] = [];
@@ -329,7 +334,31 @@ export function todayGroups(habits: Habit[], visible: (h: Habit) => boolean) {
     if (r.depth === 0) anchors.push({ anchor: r.habit, rows: [] });
     else anchors[anchors.length - 1].rows.push({ ...r, depth: r.depth - 1 });
   }
-  return { anchors, anytime: l.sections.anytime, week: l.sections.week };
+  const timed = anchors.filter((g) => g.anchor.scheduled_time);
+  if (!timed.length) return { anchors, anytime: l.sections.anytime, week: l.sections.week };
+
+  // Anytime rows come as blocks: a root (depth 0) and the rows stacked under it.
+  const blocks: Row[][] = [];
+  for (const r of l.sections.anytime) {
+    if (r.depth === 0 || !blocks.length) blocks.push([r]);
+    else blocks[blocks.length - 1].push(r);
+  }
+  const anytime: Row[] = [];
+  const moved = new Map<AnchorGroup, Row[][]>();
+  for (const b of blocks) {
+    const t = b[0].habit.scheduled_time;
+    if (!t) {
+      anytime.push(...b);
+      continue;
+    }
+    const g = [...timed].reverse().find((a) => toMinutes(a.anchor.scheduled_time!) <= toMinutes(t)) ?? timed[0];
+    moved.set(g, [...(moved.get(g) ?? []), b]);
+  }
+  for (const [g, list] of moved) {
+    list.sort((a, b) => toMinutes(a[0].habit.scheduled_time!) - toMinutes(b[0].habit.scheduled_time!));
+    g.rows.push(...list.flat());
+  }
+  return { anchors, anytime, week: l.sections.week };
 }
 
 export function toMinutes(hm: string): number {
