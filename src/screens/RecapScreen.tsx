@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
 import { weekDays, weekday } from '../lib/dates';
+import { weekSoFar } from '../lib/journal';
 import { SundayRecap } from './JournalScreen';
 import { useThemedStyles, type Theme } from '../theme';
 
@@ -12,7 +13,8 @@ import { useThemedStyles, type Theme } from '../theme';
  */
 export function RecapScreen() {
   const s = useThemedStyles(makeStyles);
-  const { ctx } = useStore();
+  const { ctx, habits, idx, focusLog } = useStore();
+  const nothing = weekSoFar(habits, idx, ctx.today, focusLog.map((f) => f.date)) === 'nothing yet';
   const sunday = weekDays(ctx.today)[6];
   const isSunday = weekday(ctx.today) === 0;
   return (
@@ -24,6 +26,7 @@ export function RecapScreen() {
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        {nothing && !isSunday && <Text style={s.empty}>Nothing logged yet this week.</Text>}
         <SundayRecap sunday={sunday} />
         {!isSunday && <Text style={s.note}>The full recap, with next week’s line, comes on Sunday.</Text>}
       </ScrollView>
@@ -39,4 +42,5 @@ const makeStyles = (t: Theme) =>
     done: { fontSize: 17, fontWeight: '600', color: t.accent },
     content: { paddingHorizontal: 16, paddingBottom: 48 },
     note: { fontSize: 13, color: t.textMuted, marginTop: 16 },
+    empty: { fontSize: 16, color: t.text, marginTop: 8 },
   });
