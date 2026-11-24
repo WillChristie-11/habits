@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text } from 'react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
@@ -55,6 +55,18 @@ export function SwipeRow({
   const t = useTheme();
   const ref = useRef<SwipeableMethods>(null);
   const close = () => ref.current?.close();
+  // Actions are rendered only while a swipe is under way (from the first drag until the row is
+  // closed again), so nothing can show at the edge of a row at rest.
+  const [live, setLive] = useState(false);
+  const opened = useRef(false);
+  const startDrag = () => {
+    opened.current = false;
+    setLive(true);
+    // A drag that never opens the row doesn't report a close: put the actions away anyway.
+    setTimeout(() => {
+      if (!opened.current) setLive(false);
+    }, 1500);
+  };
 
   const confirmDelete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
@@ -73,9 +85,17 @@ export function SwipeRow({
       rightThreshold={36}
       overshootLeft={false}
       overshootRight={false}
-      onSwipeableWillOpen={() => Haptics.selectionAsync().catch(() => {})}
+      onSwipeableOpenStartDrag={startDrag}
+      onSwipeableWillOpen={() => {
+        opened.current = true;
+        Haptics.selectionAsync().catch(() => {});
+      }}
+      onSwipeableClose={() => {
+        opened.current = false;
+        setLive(false);
+      }}
       renderLeftActions={(progress) =>
-        actions.length ? (
+        live && actions.length ? (
           <Reveal progress={progress} style={[s.actions, box]}>
             {actions.map((a) => (
               <Pressable
@@ -93,13 +113,15 @@ export function SwipeRow({
           </Reveal>
         ) : null
       }
-      renderRightActions={(progress) => (
-        <Reveal progress={progress} style={[s.actions, box]}>
-          <Pressable onPress={confirmDelete} style={[s.action, s.delete, box]} accessibilityRole="button">
-            <Text style={[s.actionText, { color: status.onStatus }]}>Delete</Text>
-          </Pressable>
-        </Reveal>
-      )}
+      renderRightActions={(progress) =>
+        !live ? null : (
+          <Reveal progress={progress} style={[s.actions, box]}>
+            <Pressable onPress={confirmDelete} style={[s.action, s.delete, box]} accessibilityRole="button">
+              <Text style={[s.actionText, { color: status.onStatus }]}>Delete</Text>
+            </Pressable>
+          </Reveal>
+        )
+      }
     >
       {children}
     </ReanimatedSwipeable>

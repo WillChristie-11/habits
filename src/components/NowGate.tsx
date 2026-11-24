@@ -2,13 +2,13 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
-
-/** Back after this long away shows the Now page again. */
-const AWAY_MS = 5 * 60_000;
+import { todayKey } from '../lib/dates';
 
 /**
- * Opens the Now page when the app starts and when it returns from the background after more
- * than 5 minutes (Settings → Opening screen turns it off). Not over a running timer.
+ * Shows the Now page on the first open of each day (a fresh launch, or the first return on a new
+ * day), over Today. Never on later returns the same day, never over a running timer, and never
+ * over Schedule, Timers or Journal: it goes to Today first. Settings -> Opening screen turns it
+ * off. Otherwise Now opens from Today (tap the ring, or pull down past the top).
  */
 export function NowGate() {
   const store = useStore();
@@ -16,25 +16,21 @@ export function NowGate() {
   useEffect(() => {
     latest.current = store;
   });
-  const shown = useRef(false);
 
   useEffect(() => {
-    if (!store.ready || shown.current) return;
-    shown.current = true;
-    if (store.settings.nowPage && !store.settings.activeTimer) router.push('/now');
-  }, [store.ready, store.settings.nowPage, store.settings.activeTimer]);
-
-  useEffect(() => {
-    let awaySince: number | null = null;
-    const sub = AppState.addEventListener('change', (st) => {
-      if (st === 'background') awaySince = Date.now();
-      if (st !== 'active' || awaySince == null) return;
-      const away = Date.now() - awaySince;
-      awaySince = null;
-      const s = latest.current.settings;
-      if (away > AWAY_MS && s.nowPage && !s.activeTimer) router.push('/now');
-    });
+    if (!store.ready) return;
+    const maybeShow = () => {
+      const { settings, updateSettings } = latest.current;
+      const today = todayKey(new Date());
+      if (!settings.nowPage || settings.nowShownOn === today || settings.activeTimer) return;
+      updateSettings({ nowShownOn: today });
+      if (router.canDismiss()) router.dismissAll();
+      router.navigate('/');
+      setTimeout(() => router.push('/now'), 50);
+    };
+    maybeShow();
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && maybeShow());
     return () => sub.remove();
-  }, []);
+  }, [store.ready]);
   return null;
 }

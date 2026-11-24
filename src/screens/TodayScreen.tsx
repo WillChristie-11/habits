@@ -3,9 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '../store';
-import { counts, dayCompletion, nextAnchor, stateOn, todayGroups, visibleOn, type Row } from '../lib/schedule';
+import { counts, dayCompletion, isCutBack, nextAnchor, stateOn, todayGroups, visibleOn } from '../lib/schedule';
 import { router } from 'expo-router';
-import { isCutBack } from '../lib/schedule';
 import { fromKey } from '../lib/dates';
 import { ProgressRing } from '../components/ProgressRing';
 import { SectionBlock } from '../components/SectionBlock';
@@ -27,6 +26,10 @@ import { useThemedStyles, type Theme } from '../theme';
  * One day (today by default), grouped by anchors in time order: each anchor is a header you tap
  * to mark done, with the habits stacked after it underneath. Then Anytime and This week.
  */
+/** How far past the top a pull-down must go to open Now. */
+const PULL_FOR_NOW = 70;
+const openNow = () => router.push('/now');
+
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
@@ -38,7 +41,6 @@ export function TodayScreen() {
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const actions = useHabitActions(date);
 
-  const [nowView, setNowView] = useState(false);
   const items = useMemo(() => habits.filter((h) => counts(h) || h.kind === 'anchor'), [habits]);
   const tracked = useMemo(() => items.filter(counts), [items]);
   const hasCutBacks = habits.some(isCutBack);
@@ -49,8 +51,7 @@ export function TodayScreen() {
   const focus = isToday ? nextAnchor(habits, idx, ctx, now.getHours() * 60 + now.getMinutes()) : null;
   const empty = groups.anchors.length === 0 && groups.anytime.length === 0 && groups.week.length === 0;
 
-  const showNow = nowView && isToday;
-  const title = showNow ? 'Now' : isToday ? 'Today' : fromKey(date).toLocaleDateString(undefined, { weekday: 'long' });
+  const title = isToday ? 'Today' : fromKey(date).toLocaleDateString(undefined, { weekday: 'long' });
   const dateLine = fromKey(date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const common = {
     date,
@@ -69,9 +70,10 @@ export function TodayScreen() {
         right={
           ring.total > 0 ? (
             <Pressable
-              onPress={() => isToday && setNowView((v) => !v)}
+              onPress={() => isToday && openNow()}
+              disabled={!isToday}
               accessibilityRole="button"
-              accessibilityLabel={showNow ? 'Show the whole day' : 'Show only what’s now'}
+              accessibilityLabel="Open Now"
             >
               <ProgressRing done={ring.done} total={ring.total} />
             </Pressable>
@@ -82,6 +84,10 @@ export function TodayScreen() {
 
       <ScrollView
         scrollEnabled={scrollEnabled}
+        // Pull down past the top to open Now (Today only).
+        onScrollEndDrag={(e) => {
+          if (isToday && e.nativeEvent.contentOffset.y < -PULL_FOR_NOW) openNow();
+        }}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -89,16 +95,7 @@ export function TodayScreen() {
         <NotLandingWatcher />
         {isToday && <DoorCard />}
         <Priorities date={date} />
-        {showNow && (
-          <NowView
-            groups={groups}
-            focusId={focus?.anchor.id ?? null}
-            focusLabel={focus?.label ?? 'Now'}
-            common={common}
-            actions={actions}
-          />
-        )}
-        {!showNow && (
+        {
           <>
             {isToday && <WeekIntentionLine />}
             {isToday && <YesterdayBetterLine />}
@@ -178,7 +175,7 @@ export function TodayScreen() {
               </View>
             )}
           </>
-        )}
+        }
         {isToday && (
           <LogRow
             onEdit={(h) => actions.openForm(h)}
@@ -193,7 +190,7 @@ export function TodayScreen() {
             }
           />
         )}
-        {!empty && isToday && !showNow && (
+        {!empty && isToday && (
           <Text style={s.hint}>Swipe right to skip or get ready · left to delete · hold and drag to reorder</Text>
         )}
       </ScrollView>
@@ -261,72 +258,3 @@ const makeStyles = (t: Theme) =>
     nowHint: { textAlign: 'center', color: t.textMuted, fontSize: 12, marginTop: 18 },
     hint: { textAlign: 'center', color: t.textMuted, fontSize: 12, marginTop: 20, lineHeight: 17 },
   });
-
-/**
- * "Now": only the current anchor (or the next one, if none has started) with its open items,
- * then the next item after it. Tap the ring again to see the whole day.
- */
-function NowView({
-  groups,
-  focusId,
-  focusLabel,
-  common,
-  actions,
-}: {
-  focusLabel: 'Now' | 'Next';
-  groups: ReturnType<typeof todayGroups>;
-  focusId: number | null;
-  common: Omit<React.ComponentProps<typeof SectionBlock>, 'rows' | 'title' | 'head' | 'nested'>;
-  actions: ReturnType<typeof useHabitActions>;
-}) {
-  const s = useThemedStyles(makeStyles);
-  const { idx, ctx } = useStore();
-  const open = (rows: Row[]) => rows.filter((r) => stateOn(r.habit, idx, ctx.today, ctx) === 'pending');
-  const i = groups.anchors.findIndex((g) => g.anchor.id === focusId);
-  const current = i >= 0 ? groups.anchors[i] : null;
-  const next = i >= 0 ? groups.anchors[i + 1] : null;
-  const anytime = open(groups.anytime);
-
-  const anchorHead = (a: (typeof groups.anchors)[number]['anchor'], label: 'Now' | 'Next') => {
-    const st = stateOn(a, idx, ctx.today, ctx);
-    return (
-      <SwipeRow
-        name={a.name}
-        onDelete={() => actions.onDelete(a)}
-        actions={actions.swipeActions(a)}
-        gap={8}
-        radius={14}
-      >
-        <AnchorRow anchor={a} state={st} showTime focus={label} onToggle={() => actions.onToggle(a, st)} />
-      </SwipeRow>
-    );
-  };
-
-  if (!current) {
-    return (
-      <>
-        {anytime.length > 0 ? (
-          <SectionBlock {...common} title="Anytime" rows={anytime} />
-        ) : (
-          <Text style={s.nowEmpty}>Nothing left for now. Tap the ring for the whole day.</Text>
-        )}
-      </>
-    );
-  }
-  const rows = open(current.rows);
-  return (
-    <>
-      <SectionBlock {...common} rows={rows} nested head={anchorHead(current.anchor, focusLabel)} />
-      {rows.length === 0 && <Text style={s.nowHint}>Everything here is done.</Text>}
-      {next ? (
-        <>
-          <Text style={s.nowLabel}>Then</Text>
-          {anchorHead(next.anchor, 'Next')}
-        </>
-      ) : (
-        anytime.length > 0 && <SectionBlock {...common} title="Then, anytime" rows={anytime.slice(0, 1)} />
-      )}
-      <Text style={s.nowHint}>Tap the ring for the whole day</Text>
-    </>
-  );
-}

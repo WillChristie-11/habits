@@ -48,6 +48,8 @@ export interface Settings {
   appOpens: string[];
   /** Show the Now page on opening (and after 5+ minutes away). */
   nowPage: boolean;
+  /** The day the Now page was last shown on its own (it shows once a day at most). */
+  nowShownOn: string | null;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -62,6 +64,7 @@ const DEFAULT_SETTINGS: Settings = {
   betterHiddenOn: null,
   appOpens: [],
   nowPage: true,
+  nowShownOn: null,
 };
 
 /**

@@ -9,6 +9,9 @@ import { useTheme } from '../theme';
 import { NotificationBridge } from '../components/NotificationBridge';
 import { NowGate } from '../components/NowGate';
 
+// The tabs are always the base of the stack; modals (Now included) are presented over them.
+export const unstable_settings = { anchor: '(tabs)' };
+
 function ThemedStack() {
   const { ready } = useStore();
   const t = useTheme();

@@ -134,7 +134,7 @@ export function SettingsScreen() {
         <View style={{ marginTop: 10 }}>
           <Toggle
             label="Now page"
-            note="When you open the app, or come back after 5 minutes away: what this moment is for. Tap or swipe up for Today."
+            note="Shown on the first open of each day. Any time: tap the ring on Today, or pull Today down. Tap or swipe up to close."
             value={settings.nowPage}
             onChange={(v) => updateSettings({ nowPage: v })}
           />

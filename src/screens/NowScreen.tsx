@@ -36,12 +36,16 @@ export function NowScreen() {
 
   const intention = weeks[weekStart(ctx.today)] ?? null;
   const c = nowContent({ habits, idx, ctx, now, r: settings.reminders, intention });
-  const toToday = () => router.navigate('/');
+  // Close by dismissing this modal (navigating to '/' from inside it would push a second set of
+  // tabs as a card on top).
+  const toToday = () => (router.canDismiss() ? router.dismiss() : router.replace('/'));
   const [swipe] = useState(() =>
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => g.dy < -15 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderRelease: (_, g) => {
-        if (g.dy < -50) router.navigate('/');
+        if (g.dy >= -50) return;
+        if (router.canDismiss()) router.dismiss();
+        else router.replace('/');
       },
     }),
   );
@@ -53,7 +57,10 @@ export function NowScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       return toToday();
     }
-    if (a.kind === 'journal') return router.navigate('/journal');
+    if (a.kind === 'journal') {
+      toToday();
+      return void setTimeout(() => router.navigate('/journal'), 350);
+    }
     toToday();
     // Let the page close before the timer (or the heavy question) opens.
     setTimeout(() => {
