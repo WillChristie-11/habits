@@ -16,7 +16,7 @@ export interface PlanSources {
   reminders: ReminderSettings;
   dayCloses: DayClose[];
   notToday: NotToday[];
-  weeks: Record<string, string>;
+  goals: { name: string; links: number[] }[];
   months: Record<string, string>;
   nudgeLog: NudgeLogRow[];
 }
@@ -30,7 +30,7 @@ export function buildPlan(s: PlanSources, now: Date): PlannedNotification[] {
   const nudges = {
     log: s.nudgeLog,
     notToday: s.notToday,
-    weeks: s.weeks,
+    goals: s.goals,
     horizon: horizonOn(s.months, s.ctx.today)?.line ?? null,
   };
   return planNotifications(s.habits, s.idx, s.ctx, s.reminders, now, close, nudges);

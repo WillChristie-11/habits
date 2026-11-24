@@ -15,8 +15,8 @@ import { useHabitActions } from '../components/useHabitActions';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { FloatingAdd } from '../components/FloatingAdd';
 import { Priorities } from '../components/Priorities';
-import { WeekIntentionLine, YesterdayBetterLine } from '../components/WeekIntention';
-import { DoorCard } from '../components/DoorCard';
+import { YesterdayBetterLine } from '../components/WeekIntention';
+import { GoalCard } from '../components/GoalCard';
 import { NotLandingWatcher } from '../components/NotLandingWatcher';
 import { LogRow } from '../components/LogRow';
 import { AnchorRow } from '../components/AnchorRow';
@@ -95,11 +95,10 @@ export function TodayScreen() {
       >
         {/* Today's priorities sit at the very top (a past day shows the ones checked that day). */}
         <NotLandingWatcher />
-        {isToday && <DoorCard />}
+        {isToday && <GoalCard />}
         <Priorities date={date} />
         {
           <>
-            {isToday && <WeekIntentionLine />}
             {isToday && <YesterdayBetterLine />}
             {isToday && <Banners onStart={actions.startTimer} />}
             {tracked.length > 0 && (

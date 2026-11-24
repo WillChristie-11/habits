@@ -1,7 +1,7 @@
 // The nudge engine for avoid habits: which frame to send, its words, when, and when to stop.
 // Pure and tested; reminders.planNotifications calls it and the runtime keeps the nudge log.
 import type { Habit, ReminderSettings } from '../types';
-import { addDays, atTime, weekday, weekStart, diffDays } from './dates';
+import { addDays, atTime, weekday, diffDays } from './dates';
 import { stateOn, visibleOn, type Ctx, type RecordIndex } from './schedule';
 import { expectedVsFelt, keptLines } from './insights';
 import { FROM_HABIT } from './timers';
@@ -73,22 +73,13 @@ export function notStartedRun(h: Habit, idx: RecordIndex, date: string, lookBack
   return n;
 }
 
-/** The weekly intention names the habit, or a word (4+ letters) from its why. */
-export function intentionMentions(h: Habit, intention: string | null | undefined): boolean {
-  if (!intention) return false;
-  const text = intention.toLowerCase();
-  if (text.includes(h.name.toLowerCase())) return true;
-  const words = (h.why ?? '').toLowerCase().match(/[a-z']{4,}/g) ?? [];
-  return words.some((w) => new RegExp(`\\b${w}\\b`).test(text));
-}
-
 export interface FrameInputs {
   h: Habit;
   idx: RecordIndex;
   date: string;
   notToday: NotToday[];
-  /** this week's intention */
-  intention: string | null;
+  /** the goal this habit is linked to (Wed–Fri: "Working toward…") */
+  goal: string | null;
   /** the pair anchor was tapped today */
   pairReady: boolean;
   /** the monthly horizon line, and when a Horizon nudge was last sent (date) */
@@ -97,11 +88,11 @@ export interface FrameInputs {
 
 export interface FrameData {
   frame: Frame;
-  /** a kept line and its date (Past you), the record numbers (Dread vs reality), the intention… */
+  /** a kept line and its date (Past you), the record numbers (Dread vs reality), the goal… */
   line?: { date: string; text: string };
   lighter?: number;
   rated?: number;
-  intention?: string;
+  goal?: string;
   horizon?: string;
 }
 
@@ -114,8 +105,7 @@ export function eligibleFrames(x: FrameInputs): FrameData[] {
   if (ev.rated >= 5 && ev.lighter > ev.rated / 2) out.push({ frame: 'dread', lighter: ev.lighter, rated: ev.rated });
   if (notStartedRun(x.h, x.idx, x.date) >= 2) out.push({ frame: 'name_it' });
   const wd = weekday(x.date);
-  if (wd >= 3 && wd <= 5 && x.intention && intentionMentions(x.h, x.intention))
-    out.push({ frame: 'this_week', intention: x.intention });
+  if (wd >= 3 && wd <= 5 && x.goal) out.push({ frame: 'this_week', goal: x.goal });
   const yesterday = addDays(x.date, -1);
   if (
     x.notToday.some(
@@ -170,8 +160,8 @@ export function frameText(f: FrameData, h: Habit, date: string, voice: Voice | n
       body = 'No pressure to do it. What’s actually in the way today?';
       break;
     case 'this_week':
-      title = 'You said this week is for…';
-      body = `“${noStop(f.intention!)}.” One today makes it real.`;
+      title = 'Working toward…';
+      body = `“${noStop(f.goal!)}.” One step today makes it real.`;
       break;
     case 'permission':
       title = 'Ten minutes. Then you’re free.';
@@ -305,7 +295,7 @@ export function planNudges(args: {
   cutoff: string;
   log: NudgeLogRow[];
   notToday: NotToday[];
-  weeks: Record<string, string>;
+  goals: { name: string; links: number[] }[];
   horizon: string | null;
 }): PlannedNudge[] {
   const { habits, idx, date, now, r, log } = args;
@@ -325,7 +315,7 @@ export function planNudges(args: {
       idx,
       date,
       notToday: args.notToday,
-      intention: args.weeks[weekStart(date)] ?? null,
+      goal: args.goals.find((g) => g.links.includes(h.id))?.name ?? null,
       pairReady,
       horizon: args.horizon ? { line: args.horizon, lastSent: lastHorizon } : null,
     });

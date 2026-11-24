@@ -292,11 +292,11 @@ export interface ClosePlan {
 
 export const CLOSE_CATEGORY = 'close-day';
 
-/** What the nudge engine reads: its log, Not today reasons, weekly intentions, the horizon line. */
+/** What the nudge engine reads: its log, Not today reasons, goals, the horizon line. */
 export interface NudgeInputs {
   log: NudgeLogRow[];
   notToday: NotToday[];
-  weeks: Record<string, string>;
+  goals: { name: string; links: number[] }[];
   horizon: string | null;
 }
 
@@ -420,7 +420,7 @@ export function planNotifications(
         cutoff: nudgeStart(r),
         log: nudges.log,
         notToday: nudges.notToday,
-        weeks: nudges.weeks,
+        goals: nudges.goals,
         horizon: nudges.horizon,
       })) {
         out.push({

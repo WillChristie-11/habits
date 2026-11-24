@@ -40,6 +40,8 @@ function ThemedStack() {
         <Stack.Screen name="tempted" options={{ presentation: 'modal' }} />
         <Stack.Screen name="close" options={{ presentation: 'modal' }} />
         <Stack.Screen name="recap" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="goal" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="goals" options={{ presentation: 'modal' }} />
         <Stack.Screen name="nottoday" options={{ presentation: 'modal' }} />
         <Stack.Screen name="notlanding" options={{ presentation: 'modal' }} />
         <Stack.Screen name="focus" options={{ presentation: 'fullScreenModal', gestureEnabled: false }} />

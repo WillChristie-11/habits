@@ -21,6 +21,7 @@ import { useStore } from '../store';
 import { recapLines, weekCounts, weekSoFar } from '../lib/journal';
 import { focusRecapLine } from '../lib/timers';
 import { betterRecap } from '../lib/dayClose';
+import { stepsTaken } from '../lib/goals';
 import { HabitForm } from './HabitForm';
 import { DirectionRecap, hasDirection } from '../components/DirectionRecap';
 import { wakeAnchor, wakeWeek, minutesOfDay } from '../lib/insights';
@@ -320,7 +321,24 @@ export function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   const store = useStore();
-  const { habits, idx, ctx, pages, weeks, saveWeek, occurrences, focusLog, dayCloses } = store;
+  const {
+    habits,
+    idx,
+    ctx,
+    pages,
+    weeks,
+    occurrences,
+    focusLog,
+    dayCloses,
+    goals,
+    goalSteps: typed,
+    priorities,
+  } = store;
+  // Steps taken toward each goal this week.
+  const goalSteps = goals.map((goal) => ({
+    goal,
+    steps: stepsTaken(goal, habits, idx, typed, priorities, weekDays(sunday)),
+  }));
   const focusLine = focusRecapLine(focusLog, weekDays(sunday));
   const better = betterRecap(dayCloses, weekDays(sunday));
   const direction = hasDirection(sunday, store);
@@ -329,15 +347,13 @@ export function SundayRecap({ sunday }: { sunday: string }) {
   const lines = recapLines(pages, sunday);
   const wake = wakeWeek(wakeAnchor(habits), idx, weekDays(sunday));
   const thisWeek = weeks[weekStart(sunday)];
-  const nextWeek = addDays(sunday, 1);
   const editable = sunday === ctx.today;
-  const [next, setNext] = useState(weeks[nextWeek] ?? '');
   if (
     !counts.length &&
     !lines.length &&
     !thisWeek &&
     !editable &&
-    !weeks[nextWeek] &&
+    !goalSteps.some((g) => g.steps.length) &&
     !wake.text &&
     !focusLine &&
     !better.lines.length &&
@@ -399,26 +415,18 @@ export function SundayRecap({ sunday }: { sunday: string }) {
         </Text>
       ))}
       <DirectionRecap sunday={sunday} editable={editable} />
-      {editable ? (
-        <TextInput
-          value={next}
-          onChangeText={setNext}
-          onEndEditing={() => saveWeek(nextWeek, next)}
-          onBlur={() => saveWeek(nextWeek, next)}
-          placeholder="This week is for…"
-          placeholderTextColor={t.textMuted}
-          keyboardAppearance={t.dark ? 'dark' : 'light'}
-          style={s.recapInput}
-          returnKeyType="done"
-          maxLength={140}
-        />
-      ) : (
-        weeks[nextWeek] && (
-          <Text style={s.recapLine}>
-            <Text style={s.recapDay}>The week after was for </Text>
-            {weeks[nextWeek]}
-          </Text>
-        )
+      {goalSteps.length > 0 && (
+        <View>
+          <Text style={s.recapDay}>Steps toward your goals</Text>
+          {goalSteps.map(({ goal, steps }) => (
+            <Text key={goal.id} style={s.recapLine} numberOfLines={3}>
+              <Text style={s.recapCount}>
+                {goal.name} · {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+              </Text>
+              {steps.length ? `  ${steps.map((x) => x.text).join(' · ')}` : ''}
+            </Text>
+          ))}
+        </View>
       )}
       <Pressable onPress={() => router.push('/')} hitSlop={8} style={{ alignSelf: 'flex-start', marginTop: 6 }}>
         <Text style={s.recapLink}>Adjust habits</Text>

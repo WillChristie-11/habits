@@ -45,6 +45,16 @@ export function SettingsScreen() {
           </Help>
         </View>
 
+        <Text style={[s.group, { marginTop: 32 }]}>Goals</Text>
+        <Pressable
+          onPress={() => router.push('/goals')}
+          style={({ pressed }) => [s.permBox, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+        >
+          <Text style={s.timeLabel}>Goals ›</Text>
+          <Help>One to three long-term goals, with the habits and activities that move them.</Help>
+        </Pressable>
+
         <Text style={[s.group, { marginTop: 32 }]}>Reminders</Text>
         <Pressable
           onPress={() => router.push('/reminders')}

@@ -8,7 +8,6 @@ import {
   eligibleFrames,
   frameText,
   ignoredStreak,
-  intentionMentions,
   notStartedRun,
   nudgeTimes,
   planNudges,
@@ -21,7 +20,7 @@ const daily = { type: 'daily' } as const;
 const avoid = (extra: Partial<Habit> = {}) =>
   habit(daily, { name: 'Job search', habit_kind: 'avoid', created_at: '2026-10-01T08:00:00', ...extra });
 const withMeta = (r: DayRecord, meta: DayRecord['meta']): DayRecord => ({ ...r, meta });
-const base = { notToday: [], intention: null, pairReady: false, horizon: null };
+const base = { notToday: [], goal: null, pairReady: false, horizon: null };
 
 test('frames: tiny door always; past you, dread vs reality, name it, this week, permission when they fit', () => {
   const h = avoid({ ladder: ['Open the tracker'], why: 'a job I like' });
@@ -36,7 +35,7 @@ test('frames: tiny door always; past you, dread vs reality, name it, this week, 
     h,
     idx,
     date,
-    intention: 'Getting a job I like',
+    goal: 'Land a GIS job',
     notToday: [{ id: 1, habit_id: h.id, date: '2026-11-24', reason: 'tired', note: null }],
   }).map((f) => f.frame);
   // 2026-11-21…24 not started → Name it.
@@ -62,7 +61,7 @@ test('wording: short titles, short bodies, no exclamation marks or emoji; voices
     { frame: 'past_you', line: { date: '2026-11-24', text: 'Sent two applications. Way less bad than I thought.' } },
     { frame: 'dread', lighter: 7, rated: 9 },
     { frame: 'name_it' },
-    { frame: 'this_week', intention: 'getting two applications out' },
+    { frame: 'this_week', goal: 'Land a GIS job' },
     { frame: 'permission' },
     { frame: 'pair' },
     { frame: 'horizon', horizon: 'a job I like' },
@@ -95,13 +94,10 @@ test('wording: short titles, short bodies, no exclamation marks or emoji; voices
   });
 });
 
-test('helpers: not-started run stops at a start; the intention matches name or why', () => {
+test('helpers: not-started run stops at a start', () => {
   const h = avoid();
   const idx = indexRecords([rec(h, '2026-11-20'), rec(h, '2026-11-22', 'skipped')]);
   assert.equal(notStartedRun(h, idx, '2026-11-25'), 4); // 21, 22, 23, 24
-  assert.ok(intentionMentions(avoid({ why: 'a calmer inbox' }), 'Clear the inbox'));
-  assert.ok(intentionMentions(h, 'Job search, then rest'));
-  assert.ok(!intentionMentions(h, 'Rest'));
 });
 
 test('times: 15 min after the morning anchor is tapped, then 3 h later; never in the last 2 h', () => {
@@ -160,7 +156,7 @@ test('3 ignored in a row stops nudges; a tap, a session or a Not landing choice 
       cutoff: '20:00',
       log: l,
       notToday: [],
-      weeks: {},
+      goals: [],
       horizon: null,
     });
   assert.equal(plan(log.slice(0, 4), h).length, 0);
@@ -181,7 +177,7 @@ test('planned nudges: two a day at most, ids stable, last two frames not repeate
     cutoff: '20:00',
     log: [],
     notToday: [],
-    weeks: {},
+    goals: [],
     horizon: null,
   });
   assert.deepEqual(

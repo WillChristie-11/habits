@@ -8,7 +8,6 @@ import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
 import { nowContent, type NowAction } from '../lib/now';
-import { weekStart } from '../lib/dates';
 import { FROM_HABIT } from '../lib/timers';
 import { useHabitTimer } from '../components/useHabitTimer';
 import { useTimerStart } from '../components/useTimerStart';
@@ -27,7 +26,7 @@ export function NowScreen() {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const { habits, idx, ctx, settings, weeks, mark } = useStore();
+  const { habits, idx, ctx, settings, goals, mark } = useStore();
   const habitTimer = useHabitTimer();
   const timerStart = useTimerStart();
   const [now, setNow] = useState(() => new Date());
@@ -36,7 +35,8 @@ export function NowScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const intention = weeks[weekStart(ctx.today)] ?? null;
+  // The first goal stands where the weekly intention was.
+  const intention = goals[0]?.name ?? null;
   const c = nowContent({ habits, idx, ctx, now, r: settings.reminders, intention });
   // Close by dismissing this modal (navigating to '/' from inside it would push a second set of
   // tabs as a card on top).

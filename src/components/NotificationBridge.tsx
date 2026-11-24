@@ -22,7 +22,7 @@ const SYNC_DEBOUNCE_MS = 400;
  */
 export function NotificationBridge() {
   const store = useStore();
-  const { habits, records, idx, ctx, settings, dayCloses, notToday, weeks, months } = store;
+  const { habits, records, idx, ctx, settings, dayCloses, notToday, goals, months } = store;
   const [foregroundTick, setForegroundTick] = useState(0);
 
   // Latest store for the response listener, which is registered once.
@@ -131,7 +131,7 @@ export function NotificationBridge() {
       );
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [habits, records, idx, ctx, settings.reminders, dayCloses, notToday, weeks, months, foregroundTick]);
+  }, [habits, records, idx, ctx, settings.reminders, dayCloses, notToday, goals, months, foregroundTick]);
 
   return null;
 }
