@@ -1,21 +1,18 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import { ActionSheetIOS, Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
 import { FOCUS_LENGTHS, MEDITATE_LENGTHS, timerName, type TimerKind } from '../lib/timers';
-import { TimerVideo } from '../components/TimerVideo';
 import { useTimerStart } from '../components/useTimerStart';
-import { timerColors, useThemedStyles, type Theme } from '../theme';
+import { timerColors, useTheme, useThemedStyles, type Theme } from '../theme';
 
 const GROW_MS = 400;
 
 /**
  * The Timers tab: two large video cards, one above the other: Focus (clock) and Meditate (flowers),
  * each a single tap target with a length chip. Tapping one grows it to fill the screen and starts
- * the timer. The videos play only while this tab is in front.
+ * the timer. Each card is a flat colour field from the theme.
  */
 export function TimersScreen() {
   const insets = useSafeAreaInsets();
@@ -28,13 +25,6 @@ export function TimersScreen() {
   });
   const [picked, setPicked] = useState<TimerKind | null>(null);
   const [anim] = useState(() => new Animated.Value(0));
-  const [focused, setFocused] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      setFocused(true);
-      return () => setFocused(false);
-    }, []),
-  );
 
   const choose = (kind: TimerKind) => {
     if (picked) return;
@@ -89,13 +79,7 @@ export function TimersScreen() {
       <Animated.View style={[s.cards, { gap, paddingHorizontal: pad, paddingBottom: pad }]}>
         {(['focus', 'meditate'] as const).map((kind) => (
           <Animated.View key={kind} style={{ flex: flexOf(kind), opacity: opacityOf(kind) }}>
-            <Card
-              kind={kind}
-              play={focused}
-              minutes={minutes[kind]}
-              onPress={() => choose(kind)}
-              onLength={() => pickLength(kind)}
-            />
+            <Card kind={kind} minutes={minutes[kind]} onPress={() => choose(kind)} onLength={() => pickLength(kind)} />
           </Animated.View>
         ))}
       </Animated.View>
@@ -105,39 +89,26 @@ export function TimersScreen() {
 
 function Card({
   kind,
-  play,
   minutes,
   onPress,
   onLength,
 }: {
   kind: TimerKind;
-  play: boolean;
   minutes: number;
   onPress(): void;
   onLength(): void;
 }) {
   const s = useThemedStyles(makeStyles);
-  const shade = kind === 'focus' ? timerColors.focusShade : timerColors.meditateShade;
+  const t = useTheme();
   return (
     // The card is one tap target; the length chip sits on top of it (not nested inside it).
-    <View style={s.card}>
+    <View style={[s.card, { backgroundColor: kind === 'focus' ? t.timerFocus : t.timerMeditate }]}>
       <Pressable
         onPress={onPress}
         style={({ pressed }) => [StyleSheet.absoluteFill, s.cardTap, pressed && { opacity: 0.92 }]}
         accessibilityRole="button"
         accessibilityLabel={`Start ${timerName(kind)}, ${minutes} minutes`}
       >
-        <TimerVideo kind={kind} mode={play ? 'play' : 'pause'} />
-        {/* Text never sits straight on the video: a gradient runs up from the bottom. */}
-        <Svg style={StyleSheet.absoluteFill} preserveAspectRatio="none" viewBox="0 0 1 1">
-          <Defs>
-            <LinearGradient id={`g-${kind}`} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0.45" stopColor={shade} stopOpacity="0" />
-              <Stop offset="1" stopColor={shade} stopOpacity="0.92" />
-            </LinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width="1" height="1" fill={`url(#g-${kind})`} />
-        </Svg>
         <View style={s.cardBottom}>
           <Text style={s.cardName}>{timerName(kind)}</Text>
         </View>

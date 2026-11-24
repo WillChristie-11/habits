@@ -28,6 +28,9 @@ export interface Theme {
   shadow: string;
   /** dimmed backdrop behind dialogs */
   scrim: string;
+  /** Timers tab: flat colour fields for the Focus and Meditate cards (white text on them) */
+  timerFocus: string;
+  timerMeditate: string;
 }
 
 /** Status colours: identical in every theme, and never reused for anything else. */
@@ -87,6 +90,8 @@ export const themes = {
     muted: '#ECEBE5',
     shadow: '#000000',
     scrim: 'rgba(0,0,0,0.30)',
+    timerFocus: '#2F6B4F',
+    timerMeditate: '#4F7D8C',
   },
   midnight: {
     id: 'midnight',
@@ -106,6 +111,8 @@ export const themes = {
     muted: '#262B36',
     shadow: '#000000',
     scrim: 'rgba(0,0,0,0.55)',
+    timerFocus: '#2B3A5C',
+    timerMeditate: '#2E4A44',
   },
 } satisfies Record<string, Omit<Theme, 'id'> & { id: string }>;
 
