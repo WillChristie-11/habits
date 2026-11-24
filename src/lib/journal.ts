@@ -118,3 +118,24 @@ export function entryToLines(type: string, raw: string): string[] {
   }
   return lines;
 }
+
+/**
+ * The Journal's bottom card: "Week so far · 12 done · 3 sessions · 2 logs · 4 focus rounds",
+ * from Monday through `today`. Only what happened; parts with nothing are left out.
+ */
+export function weekSoFar(habits: Habit[], idx: RecordIndex, today: string, focusDates: string[]): string {
+  const days = weekDays(today).filter((d) => d <= today);
+  const doneOn = (h: Habit) => days.filter((d) => idx.get(h.id)?.get(d)?.status === 'done').length;
+  const sum = (list: Habit[]) => list.reduce((n, h) => n + doneOn(h), 0);
+  const want = sum(habits.filter((h) => h.kind === 'habit' && h.habit_kind === 'want'));
+  const sessions = sum(habits.filter((h) => h.kind === 'habit' && h.habit_kind === 'avoid'));
+  const logs = sum(habits.filter((h) => h.kind === 'activity'));
+  const rounds = focusDates.filter((d) => days.includes(d)).length;
+  const parts = [
+    want && `${want} done`,
+    sessions && `${sessions} ${sessions === 1 ? 'session' : 'sessions'}`,
+    logs && `${logs} ${logs === 1 ? 'log' : 'logs'}`,
+    rounds && `${rounds} focus ${rounds === 1 ? 'round' : 'rounds'}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'nothing yet';
+}

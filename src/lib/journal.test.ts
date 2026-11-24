@@ -135,7 +135,12 @@ test('Sunday recap: notes under items, anchors only with notes, cut-backs as a c
   const snack = habit({ type: 'daily' }, { name: 'Snacking', habit_kind: 'cut_back' });
   const scroll = habit({ type: 'daily' }, { name: 'Doomscrolling', habit_kind: 'cut_back', locked: true });
   const note = (h: Habit, d: string, text: string) => ({ ...rec(h, d), meta: { note: text } });
-  const idx = indexRecords([note(read, '2026-11-16', 'Dune ch. 3'), rec(read, '2026-11-17'), rec(wake, '2026-11-16'), note(work, '2026-11-18', 'shipped it')]);
+  const idx = indexRecords([
+    note(read, '2026-11-16', 'Dune ch. 3'),
+    rec(read, '2026-11-17'),
+    rec(wake, '2026-11-16'),
+    note(work, '2026-11-18', 'shipped it'),
+  ]);
   const occ = [
     { id: 1, habit_id: snack.id, at: '2026-11-16T15:00:00Z', feeling: 2, note: null },
     { id: 2, habit_id: snack.id, at: '2026-11-19T15:00:00Z', feeling: null, note: null },
@@ -143,7 +148,33 @@ test('Sunday recap: notes under items, anchors only with notes, cut-backs as a c
     { id: 4, habit_id: snack.id, at: '2026-11-10T15:00:00Z', feeling: null, note: null }, // last week
   ];
   const c = weekCounts([read, wake, work, snack, scroll], idx, { today: SUN }, SUN, occ);
-  assert.deepEqual(c.map((x) => x.text), ['Read 2×', 'Snacking: 2 times', 'Work 1×', 'Private: 1 time']);
+  assert.deepEqual(
+    c.map((x) => x.text),
+    ['Read 2×', 'Snacking: 2 times', 'Work 1×', 'Private: 1 time'],
+  );
   assert.deepEqual(c[0].notes, [{ date: '2026-11-16', text: 'Dune ch. 3' }]);
   assert.deepEqual(c[2].notes, [{ date: '2026-11-18', text: 'shipped it' }]);
+});
+
+test('week so far: done, sessions, logs and focus rounds from Monday to today', async () => {
+  const { weekSoFar } = await import('./journal');
+  const { indexRecords } = await import('./schedule');
+  const { habit, rec } = await import('./testing');
+  const daily = { type: 'daily' } as const;
+  const read = habit(daily, { name: 'Read' });
+  const job = habit(daily, { name: 'Job search', habit_kind: 'avoid' });
+  const run = habit(daily, { kind: 'activity', name: 'Run' });
+  const idx = indexRecords([
+    rec(read, '2026-11-23'),
+    rec(read, '2026-11-24'),
+    rec(read, '2026-11-20'), // last week
+    rec(job, '2026-11-24'),
+    rec(run, '2026-11-23'),
+    rec(read, '2026-11-25', 'skipped'),
+  ]);
+  assert.equal(
+    weekSoFar([read, job, run], idx, '2026-11-25', ['2026-11-24', '2026-11-24', '2026-11-19']),
+    '2 done · 1 session · 1 log · 2 focus rounds',
+  );
+  assert.equal(weekSoFar([read], indexRecords([]), '2026-11-25', []), 'nothing yet');
 });

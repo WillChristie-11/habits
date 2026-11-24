@@ -18,7 +18,7 @@ import { router, useFocusEffect } from 'expo-router';
 import Svg, { Circle, Line } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useStore } from '../store';
-import { recapLines, weekCounts } from '../lib/journal';
+import { recapLines, weekCounts, weekSoFar } from '../lib/journal';
 import { focusRecapLine } from '../lib/timers';
 import { betterRecap } from '../lib/dayClose';
 import { HabitForm } from './HabitForm';
@@ -88,7 +88,7 @@ function SwipeArea({
 export function JournalScreen() {
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
-  const { pages, ctx, dayCloses } = useStore();
+  const { pages, ctx, dayCloses, habits, idx, focusLog } = useStore();
   // Closing the day rewrites today's page; remount the editor so it shows the new lines.
   const closedStamp = JSON.stringify(dayCloses.find((c) => c.date === ctx.today) ?? null);
   const [picked, setPicked] = useState<string | null>(null);
@@ -136,19 +136,7 @@ export function JournalScreen() {
           </Text>
           {weekday(date) === 0 && <SundayRecap sunday={date} />}
           {isToday ? (
-            <>
-              <TodayPage key={`${date}-${closedStamp}`} date={date} inputRef={editor} />
-              <Pressable
-                onPress={() => {
-                  editor.current?.blur(); // saves what was typed
-                  router.push({ pathname: '/close', params: { date } });
-                }}
-                style={({ pressed }) => [s.closeBtn, pressed && { opacity: 0.7 }]}
-                accessibilityRole="button"
-              >
-                <Text style={s.closeText}>Close the day</Text>
-              </Pressable>
-            </>
+            <TodayPage key={`${date}-${closedStamp}`} date={date} inputRef={editor} />
           ) : pages[date] ? (
             <Text style={s.pageText} selectable>
               {pages[date]}
@@ -158,6 +146,42 @@ export function JournalScreen() {
           )}
         </ScrollView>
       </SwipeArea>
+
+      {/* Bottom card, above the tab bar: the week so far (opens the recap) and Close the day. */}
+      {!keyboardUp && (
+        <View style={s.bottomCard}>
+          <Pressable
+            onPress={() => {
+              editor.current?.blur(); // saves what was typed
+              router.push('/recap');
+            }}
+            style={({ pressed }) => [s.weekRow, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityHint="Opens the week's recap"
+          >
+            <Text style={s.weekText} numberOfLines={1}>
+              <Text style={s.weekLabel}>Week so far · </Text>
+              {weekSoFar(
+                habits,
+                idx,
+                ctx.today,
+                focusLog.map((f) => f.date),
+              )}
+            </Text>
+            <Text style={s.weekChevron}>›</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              editor.current?.blur();
+              router.push({ pathname: '/close', params: { date: ctx.today } });
+            }}
+            style={({ pressed }) => [s.closeBtn, pressed && { opacity: 0.8 }]}
+            accessibilityRole="button"
+          >
+            <Text style={s.closeText}>Close the day</Text>
+          </Pressable>
+        </View>
+      )}
 
       {Platform.OS === 'ios' && (
         <InputAccessoryView nativeID={DONE_BAR}>
@@ -292,7 +316,7 @@ function WeekStrip({
  * wake-up times, the first line of each page Mon–Sat, last week's intention, then one optional
  * line for the coming week.
  */
-function SundayRecap({ sunday }: { sunday: string }) {
+export function SundayRecap({ sunday }: { sunday: string }) {
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   const store = useStore();
@@ -453,16 +477,22 @@ const makeStyles = (t: Theme) =>
       fontWeight: '300',
       color: t.journalText,
     },
-    closeBtn: {
-      alignSelf: 'flex-start',
-      marginTop: 20,
-      borderWidth: 1.5,
-      borderColor: t.accent,
-      borderRadius: 18,
-      paddingHorizontal: 14,
-      paddingVertical: 7,
+    bottomCard: {
+      marginHorizontal: 16,
+      marginBottom: 10,
+      padding: 12,
+      gap: 10,
+      borderRadius: 16,
+      backgroundColor: t.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
     },
-    closeText: { color: t.accent, fontSize: 15, fontWeight: '600' },
+    weekRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    weekText: { flex: 1, fontSize: 15, color: t.text },
+    weekLabel: { color: t.textMuted },
+    weekChevron: { fontSize: 20, color: t.textMuted },
+    closeBtn: { alignItems: 'center', paddingVertical: 13, borderRadius: 12, backgroundColor: t.accent },
+    closeText: { color: t.onAccent, fontSize: 16, fontWeight: '600' },
     makeHabit: { marginTop: 6, gap: 2 },
     makeHabitText: { color: t.accent, fontSize: 14, fontWeight: '600' },
     pageText: {
