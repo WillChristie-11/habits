@@ -6,7 +6,6 @@ import {
   Animated,
   Easing,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -38,71 +37,11 @@ const dayName = (d: string, today: string) =>
       : fromKey(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 
 /**
- * "＋ Log" at the bottom of Today. Opens a sheet of activity tiles; activities are never expected,
- * missed or counted.
- */
-export function LogRow({
-  onEdit,
-  onDelete,
-  onNew,
-  trailing,
-}: {
-  onEdit(h: Habit): void;
-  onDelete(h: Habit): void;
-  onNew(): void;
-  /** Shown at the right end of the row (the "Tempted?" button). */
-  trailing?: React.ReactNode;
-}) {
-  const s = useThemedStyles(makeStyles);
-  const [open, setOpen] = useState(false);
-  // Something to do after the sheet has closed (opening the form).
-  const after = useRef<(() => void) | null>(null);
-  const closeThen = (fn: () => void) => {
-    after.current = fn;
-    setOpen(false);
-  };
-  return (
-    <View style={s.wrap}>
-      <View style={s.row}>
-        <Pressable
-          onPress={() => setOpen(true)}
-          style={({ pressed }) => [s.btn, pressed && { opacity: 0.7 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Log an activity"
-        >
-          <Text style={s.btnText}>＋ Log</Text>
-        </Pressable>
-        {trailing && <View style={{ marginLeft: 'auto' }}>{trailing}</View>}
-      </View>
-      <Modal
-        visible={open}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setOpen(false)}
-        onDismiss={() => {
-          after.current?.();
-          after.current = null;
-        }}
-      >
-        {open && (
-          <LogSheetBody
-            onClose={() => setOpen(false)}
-            onEdit={(h) => closeThen(() => onEdit(h))}
-            onNew={() => closeThen(onNew)}
-            onDelete={onDelete}
-          />
-        )}
-      </Modal>
-    </View>
-  );
-}
-
-/**
  * Tiles (colour + SF Symbol, last 7 days, x/goal) and "＋ New". Tap = log now, with a 5 s Undo
  * bar and the amount/feeling panel once. Long-press: Edit · Log for another day · Delete.
  * Below: the last 7 days of logs; swipe one left to delete it.
  */
-function LogSheetBody({
+export function LogSheetBody({
   onClose,
   onEdit,
   onNew,

@@ -18,7 +18,7 @@ import { Priorities } from '../components/Priorities';
 import { YesterdayBetterLine } from '../components/WeekIntention';
 import { GoalCard } from '../components/GoalCard';
 import { NotLandingWatcher } from '../components/NotLandingWatcher';
-import { LogRow } from '../components/LogRow';
+import { ActivityChips } from '../components/ActivityChips';
 import { AnchorRow } from '../components/AnchorRow';
 import { SwipeRow } from '../components/SwipeRow';
 import { useThemedStyles, type Theme } from '../theme';
@@ -96,6 +96,13 @@ export function TodayScreen() {
         {/* Today's priorities sit at the very top (a past day shows the ones checked that day). */}
         <NotLandingWatcher />
         {isToday && <GoalCard />}
+        {isToday && (
+          <ActivityChips
+            onEdit={(h) => actions.openForm(h)}
+            onDelete={actions.onDelete}
+            onNew={() => actions.openForm(null, 'activity')}
+          />
+        )}
         <Priorities date={date} />
         {
           <>
@@ -177,19 +184,10 @@ export function TodayScreen() {
             )}
           </>
         }
-        {isToday && (
-          <LogRow
-            onEdit={(h) => actions.openForm(h)}
-            onDelete={actions.onDelete}
-            onNew={() => actions.openForm(null, 'activity')}
-            trailing={
-              hasCutBacks ? (
-                <Pressable onPress={() => router.push('/tempted')} style={s.tempted} accessibilityRole="button">
-                  <Text style={s.temptedText}>Tempted?</Text>
-                </Pressable>
-              ) : null
-            }
-          />
+        {isToday && hasCutBacks && (
+          <Pressable onPress={() => router.push('/tempted')} style={s.tempted} accessibilityRole="button">
+            <Text style={s.temptedText}>Tempted?</Text>
+          </Pressable>
         )}
         {!empty && isToday && showHints && (
           <Text style={s.hint}>Swipe right for Edit or Skip · left to delete · hold and drag to reorder</Text>
@@ -237,6 +235,8 @@ const makeStyles = (t: Theme) =>
     },
     tipBtnText: { color: t.onAccent, fontWeight: '600', fontSize: 15 },
     tempted: {
+      alignSelf: 'flex-end',
+      marginTop: 20,
       borderRadius: 20,
       paddingHorizontal: 14,
       paddingVertical: 9,
