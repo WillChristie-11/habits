@@ -26,6 +26,26 @@ export type FocusAction = (typeof FOCUS_ACTIONS)[number];
 const categoryId = (c: string) => (c === 'item' ? ITEM_CATEGORY : `habit-${c}`);
 
 const registeredStart = new Set<number>();
+/** Categories whose buttons come with the notification (the catch-up's activities). */
+const registeredButtons = new Map<string, string>();
+async function ensureButtonCategories(plan: PlannedNotification[]) {
+  for (const p of plan) {
+    if (!p.category || !p.buttons?.length) continue;
+    const id = categoryId(p.category);
+    const sig = p.buttons.map((b) => `${b.id}:${b.title}`).join('|');
+    if (registeredButtons.get(id) === sig) continue;
+    try {
+      await Notifications.setNotificationCategoryAsync(
+        id,
+        p.buttons.map((b) => ({ identifier: b.id, buttonTitle: b.title, options: { opensAppToForeground: false } })),
+      );
+      registeredButtons.set(id, sig);
+    } catch (e) {
+      console.warn('Could not register buttons', e);
+    }
+  }
+}
+
 async function ensureStartCategories(plan: PlannedNotification[]) {
   for (const p of plan) {
     const m = p.category?.match(/^start-(\d+)$/);
@@ -115,7 +135,13 @@ export async function initNotifications() {
     // summaries don't, because the in-app banners already say the same thing.
     handleNotification: async (n) => {
       const type = (n.request.content.data as { type?: string } | undefined)?.type;
-      const show = type === 'item' || type === 'timer' || type === 'follow' || type === 'close' || type === 'nudge';
+      const show =
+        type === 'item' ||
+        type === 'timer' ||
+        type === 'follow' ||
+        type === 'close' ||
+        type === 'nudge' ||
+        type === 'catchup';
       return { shouldShowBanner: show, shouldShowList: true, shouldPlaySound: show, shouldSetBadge: false };
     },
   });
@@ -200,6 +226,7 @@ export function syncNotifications(plan: PlannedNotification[]): Promise<void> {
           await Notifications.cancelScheduledNotificationAsync(n.identifier);
       }
       await ensureStartCategories(plan);
+      await ensureButtonCategories(plan);
       for (const p of plan) {
         await Notifications.scheduleNotificationAsync({
           identifier: p.id,
@@ -221,7 +248,9 @@ export function syncNotifications(plan: PlannedNotification[]): Promise<void> {
 export interface ItemResponse {
   /** unique per tap, for de-duplication */
   key: string;
-  action: 'done' | 'later' | 'skip' | 'start' | 'feel' | 'note' | 'reason' | 'open';
+  action: 'done' | 'later' | 'skip' | 'start' | 'feel' | 'note' | 'reason' | 'log' | 'open';
+  /** catch-up buttons: which activity to log */
+  logId: number | null;
   /** the notification's id (nudges are logged by it) */
   id: string;
   /** Name it's reason buttons */
@@ -250,26 +279,30 @@ export function parseResponse(r: Notifications.NotificationResponse): ItemRespon
   const a = r.actionIdentifier;
   const feel = a.match(FEEL_ACTION);
   const reasonKey = a.startsWith('reason-') ? a.slice('reason-'.length) : null;
-  const action: ItemResponse['action'] = isReason(reasonKey)
-    ? 'reason'
-    : feel
-      ? 'feel'
-      : a === ACTION_NOTE
-        ? 'note'
-        : a === ACTION_DONE
-          ? 'done'
-          : a === ACTION_LATER
-            ? 'later'
-            : a === ACTION_SKIP
-              ? 'skip'
-              : a === ACTION_START
-                ? 'start'
-                : 'open';
+  const logMatch = a.match(/^log-(\d+)$/);
+  const action: ItemResponse['action'] = logMatch
+    ? 'log'
+    : isReason(reasonKey)
+      ? 'reason'
+      : feel
+        ? 'feel'
+        : a === ACTION_NOTE
+          ? 'note'
+          : a === ACTION_DONE
+            ? 'done'
+            : a === ACTION_LATER
+              ? 'later'
+              : a === ACTION_SKIP
+                ? 'skip'
+                : a === ACTION_START
+                  ? 'start'
+                  : 'open';
   return {
     key: `${r.notification.request.identifier}|${r.notification.date}|${a}`,
     action,
     id: r.notification.request.identifier,
     reason: isReason(reasonKey) ? reasonKey : null,
+    logId: logMatch ? Number(logMatch[1]) : null,
     habitId: typeof data.habitId === 'number' ? data.habitId : null,
     date: typeof data.date === 'string' ? data.date : null,
     type: typeof data.type === 'string' ? data.type : null,

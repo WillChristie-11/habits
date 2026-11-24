@@ -167,6 +167,8 @@ export interface ReminderSettings {
   silenced: string[];
   /** Focus / break / Meditate end alerts. */
   timerAlerts: boolean;
+  /** 9 PM "Did you do any of these today?" for activities under their weekly goal. */
+  catchUp: { enabled: boolean; time: string };
 }
 
 /** Random check-ins: a few nudges a day at unpredictable times, about something still open. */
@@ -193,4 +195,5 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   pausedOn: null,
   silenced: [],
   timerAlerts: true,
+  catchUp: { enabled: true, time: '21:00' },
 };

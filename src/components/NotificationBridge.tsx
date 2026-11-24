@@ -52,6 +52,12 @@ export function NotificationBridge() {
         else router.push({ pathname: '/tempted', params: { occ: String(r.occurrenceId) } });
         return;
       }
+      // Activities catch-up: a button logs that activity for the day; a tap opens Today.
+      if (r.type === 'catchup') {
+        const h = r.logId != null ? s.habits.find((x) => x.id === r.logId) : undefined;
+        if (h && r.date) await s.logActivity(h, r.date);
+        return;
+      }
       // Close the day?: Close (or a tap) opens the sheet; Not tonight does nothing.
       if (r.type === 'close') {
         if (r.action !== 'skip') router.push({ pathname: '/close', params: r.date ? { date: r.date } : {} });

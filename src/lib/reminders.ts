@@ -1,6 +1,7 @@
 // Pure reminder logic shared by the in-app banners and the scheduled notifications.
 import { FROM_HABIT } from './timers';
 import { yesterdayLine } from './dayClose';
+import { CATCH_UP_MAX, catchUpList } from './activities';
 import { planNudges, nudgesPaused, type NudgeLogRow } from './nudges';
 import type { NotToday } from './notToday';
 import type { CheckinSettings, Habit, ReminderSettings } from '../types';
@@ -242,7 +243,14 @@ export interface PlannedNotification {
   body: string;
   /** 'item' → Done / Later / Skip buttons; 'start-N' → Start N min / Later / Skip (avoid habits) */
   category: string | null;
-  data: { type: 'item' | 'morning' | 'evening' | 'close' | 'nudge'; habitId?: number; date: string; frame?: string };
+  data: {
+    type: 'item' | 'morning' | 'evening' | 'close' | 'nudge' | 'catchup';
+    habitId?: number;
+    date: string;
+    frame?: string;
+  };
+  /** Buttons registered with this notification's category (the catch-up's activities). */
+  buttons?: { id: string; title: string }[];
 }
 
 /** Avoid habits get a "Focus 25" button instead of "Done". */
@@ -356,6 +364,25 @@ export function planNotifications(
           body: withLine(lines.join('\n'), pickMessage(null, date, r.messages)),
           category: null,
           data: { type: 'morning', date },
+        });
+      }
+    }
+
+    // Activities catch-up (9 PM by default): those still under their weekly goal, not logged
+    // today; up to 4 buttons log them straight from the notification.
+    if (r.catchUp?.enabled) {
+      const at = atTime(date, r.catchUp.time);
+      const list = catchUpList(habits, idx, date);
+      if (future(at) && list.length) {
+        const shown = list.slice(0, CATCH_UP_MAX);
+        out.push({
+          id: `catchup-${date}`,
+          at,
+          title: 'Did you do any of these today?',
+          body: `${list.map((h) => h.name).join(' · ')}. Long-press to log.`,
+          category: `catchup-${shown.map((h) => h.id).join('-')}`,
+          buttons: shown.map((h) => ({ id: `log-${h.id}`, title: h.name })),
+          data: { type: 'catchup', date },
         });
       }
     }
@@ -499,6 +526,7 @@ const GROUP: Record<string, string> = {
   morning: 'Morning reminder',
   evening: 'Evening nudge',
   close: 'Close the day',
+  catchup: 'Activities catch-up',
   nudge: 'Nudge',
 };
 

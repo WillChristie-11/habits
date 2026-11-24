@@ -190,6 +190,25 @@ export function RemindersScreen() {
 
             <Help>Check-ins rotate your motivational messages, as before.</Help>
 
+            <Text style={s.group}>Activities catch-up</Text>
+            <View style={{ marginTop: 10, gap: 10 }}>
+              <Toggle
+                label="Did you do any of these today?"
+                note="Lists activities still under their weekly goal, with buttons that log them without opening the app."
+                value={r.catchUp.enabled}
+                onChange={(enabled) => updateReminders({ catchUp: { ...r.catchUp, enabled } })}
+              />
+              {r.catchUp.enabled && (
+                <View style={s.timeRow}>
+                  <Text style={s.timeLabel}>Time</Text>
+                  <TimeField
+                    value={r.catchUp.time}
+                    onChange={(time) => updateReminders({ catchUp: { ...r.catchUp, time } })}
+                  />
+                </View>
+              )}
+            </View>
+
             <Text style={s.group}>Transition/timer alerts</Text>
             <View style={{ marginTop: 10 }}>
               <Toggle

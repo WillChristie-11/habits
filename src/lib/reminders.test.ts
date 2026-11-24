@@ -467,3 +467,26 @@ test('pause all today, silenced occurrences, and the upcoming list', async () =>
     'nudge-4-2026-11-24-1',
   ]);
 });
+
+test('activities catch-up at 9 PM: only those under their weekly goal, with up to 4 log buttons', async () => {
+  const { planNotifications } = await import('./reminders');
+  const { DEFAULT_REMINDERS } = await import('../types');
+  const { indexRecords } = await import('./schedule');
+  const now = new Date('2026-11-25T08:00:00');
+  const ctx = { today: '2026-11-25' };
+  const r = { ...DEFAULT_REMINDERS, checkins: { ...DEFAULT_REMINDERS.checkins, enabled: false } };
+  const run = habit(daily, { kind: 'activity', name: 'Run', target_min: 3 });
+  const read = habit(daily, { kind: 'activity', name: 'Reading', target_min: 1 });
+  const yoga = habit(daily, { kind: 'activity', name: 'Yoga' });
+  const idx = indexRecords([rec(read, '2026-11-24')]);
+  const plan = planNotifications([run, read, yoga], idx, ctx, r, now);
+  const c = plan.find((p) => p.id === 'catchup-2026-11-25');
+  assert.ok(c);
+  assert.equal(c.at.getHours(), 21);
+  assert.equal(c.title, 'Did you do any of these today?');
+  assert.equal(c.body, 'Run. Long-press to log.');
+  assert.deepEqual(c.buttons, [{ id: `log-${run.id}`, title: 'Run' }]);
+  assert.equal(c.category, `catchup-${run.id}`);
+  const off = planNotifications([run], idx, ctx, { ...r, catchUp: { enabled: false, time: '21:00' } }, now);
+  assert.ok(!off.some((p) => p.data.type === 'catchup'));
+});
