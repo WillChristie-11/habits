@@ -77,7 +77,7 @@ export function TodayScreen() {
               accessibilityRole="button"
               accessibilityLabel="Open Now"
             >
-              <ProgressRing done={ring.done} total={ring.total} />
+              <ProgressRing done={ring.done} total={ring.total} size={44} />
             </Pressable>
           ) : null
         }

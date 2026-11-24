@@ -6,7 +6,9 @@ import { useTheme, useThemedStyles, type Theme } from '../theme';
 export function ProgressRing({ done, total, size = 64 }: { done: number; total: number; size?: number }) {
   const t = useTheme();
   const s = useThemedStyles(makeStyles);
-  const stroke = 6;
+  // Stroke and text scale with the ring (Today uses a small one).
+  const stroke = Math.max(3.5, size * 0.09);
+  const scale = size / 64;
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const pct = total ? done / total : 0;
@@ -29,11 +31,11 @@ export function ProgressRing({ done, total, size = 64 }: { done: number; total: 
       </Svg>
       <View style={[StyleSheet.absoluteFill, s.center]}>
         {complete ? (
-          <Text style={[s.label, { color: t.accent }]}>✓</Text>
+          <Text style={[s.label, { color: t.accent, fontSize: 17 * scale }]}>✓</Text>
         ) : (
-          <Text style={s.label}>
+          <Text style={[s.label, { fontSize: 17 * scale }]}>
             {done}
-            <Text style={s.total}>/{total}</Text>
+            <Text style={[s.total, { fontSize: 13 * scale }]}>/{total}</Text>
           </Text>
         )}
       </View>
