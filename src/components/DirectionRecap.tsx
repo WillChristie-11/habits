@@ -26,7 +26,7 @@ export function hasDirection(sunday: string, s: ReturnType<typeof useStore>): bo
 }
 
 /**
- * Sunday recap additions: WHAT YOU FACED, WHAT GOT IN THE WAY, IN YOUR WORDS, LAST WEEK WAS FOR
+ * Sunday recap additions: What you faced, What got in the way, In your words, Last week was for
  * (It happened / Partly / Not yet) and, on the last Sunday of the month, the horizon question.
  */
 export function DirectionRecap({ sunday, editable }: { sunday: string; editable: boolean }) {
@@ -47,7 +47,7 @@ export function DirectionRecap({ sunday, editable }: { sunday: string; editable:
     <View style={s.wrap}>
       {faced.text && (
         <View style={s.section}>
-          <Text style={s.label}>WHAT YOU FACED</Text>
+          <Text style={s.label}>What you faced</Text>
           <Text style={s.line}>{faced.text}</Text>
           {faced.per.map((x) => (
             <Text key={x.habit.id} style={s.small}>
@@ -60,7 +60,7 @@ export function DirectionRecap({ sunday, editable }: { sunday: string; editable:
 
       {reasons.length > 0 && (
         <View style={s.section}>
-          <Text style={s.label}>WHAT GOT IN THE WAY</Text>
+          <Text style={s.label}>What got in the way</Text>
           {reasons.map((r) => (
             <View key={r.key} style={s.barRow}>
               <Text style={s.barLabel} numberOfLines={1}>
@@ -78,7 +78,7 @@ export function DirectionRecap({ sunday, editable }: { sunday: string; editable:
 
       {kept.length > 0 && (
         <View style={s.section}>
-          <Text style={s.label}>IN YOUR WORDS</Text>
+          <Text style={s.label}>In your words</Text>
           {kept.map((l) => (
             <Text key={`${l.date}-${l.habit}`} style={s.quote}>
               “{l.text}”
@@ -89,7 +89,7 @@ export function DirectionRecap({ sunday, editable }: { sunday: string; editable:
 
       {intention && (
         <View style={s.section}>
-          <Text style={s.label}>LAST WEEK WAS FOR</Text>
+          <Text style={s.label}>Last week was for</Text>
           <Text style={s.line}>{intention}</Text>
           {editable ? (
             <View style={s.chips}>
@@ -126,7 +126,7 @@ function Horizon({ sunday, editable }: { sunday: string; editable: boolean }) {
 
   return (
     <View style={s.section}>
-      <Text style={s.label}>THREE MONTHS FROM NOW</Text>
+      <Text style={s.label}>Three months from now</Text>
       <Text style={s.line}>What do you want to be true?</Text>
       {current && !rewriting ? (
         <>
@@ -166,7 +166,7 @@ const makeStyles = (t: Theme) =>
   StyleSheet.create({
     wrap: { gap: 14, marginTop: 10 },
     section: { gap: 6 },
-    label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, color: t.textMuted },
+    label: { fontSize: 12, fontWeight: '700', color: t.textMuted },
     line: { fontSize: 15, color: t.text, lineHeight: 21 },
     small: { fontSize: 14, color: t.textMuted },
     quote: { fontSize: 15, fontStyle: 'italic', color: t.text },

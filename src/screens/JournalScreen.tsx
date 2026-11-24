@@ -492,7 +492,7 @@ const makeStyles = (t: Theme) =>
       backgroundColor: t.surface,
       gap: 4,
     },
-    recapLabel: { fontSize: 11, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+    recapLabel: { fontSize: 11, fontWeight: '700', color: t.textMuted },
     recapCount: { fontSize: 14, color: t.text, fontWeight: '600', lineHeight: 20 },
     recapNote: { fontSize: 13, color: t.textMuted, lineHeight: 18, marginLeft: 10 },
     recapLine: { fontSize: 13, color: t.textMuted, lineHeight: 18 },

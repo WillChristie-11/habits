@@ -1,3 +1,4 @@
+import { useShowHints } from '../components/useShowHints';
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -12,6 +13,7 @@ import { useThemedStyles, type Theme } from '../theme';
 
 /** Today's plan: anchors and timed habits at their times, flexible habits in their windows. */
 export function ScheduleScreen() {
+  const showHints = useShowHints();
   const insets = useSafeAreaInsets();
   const s = useThemedStyles(makeStyles);
   const { habits, idx, ctx, now } = useStore();
@@ -55,10 +57,8 @@ export function ScheduleScreen() {
           onDelete={actions.onDelete}
           swipeActions={actions.swipeActions}
         />
-        {anchors > 0 && (
-          <Text style={s.hint}>
-            Tap an anchor to mark it done · swipe right to skip, get ready or edit · left to delete
-          </Text>
+        {anchors > 0 && showHints && (
+          <Text style={s.hint}>Tap an anchor to mark it done · swipe right for Edit or Skip · left to delete</Text>
         )}
       </ScrollView>
 

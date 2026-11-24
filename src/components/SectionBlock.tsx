@@ -84,8 +84,6 @@ const makeStyles = (t: Theme) =>
       fontSize: 13,
       fontWeight: '600',
       color: t.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
       marginBottom: 8,
       marginLeft: 4,
     },

@@ -28,7 +28,7 @@ export function DoorCard() {
   if (door.state !== 'open') {
     return (
       <View style={s.collapsed}>
-        <Text style={s.label}>TODAY’S DOOR</Text>
+        <Text style={s.label}>Today’s door</Text>
         <Text style={s.collapsedText} numberOfLines={1}>
           {h.name} · {door.state === 'opened' ? 'opened' : 'not today'}
         </Text>
@@ -48,7 +48,7 @@ export function DoorCard() {
   };
   return (
     <View style={s.card}>
-      <Text style={s.label}>TODAY’S DOOR</Text>
+      <Text style={s.label}>Today’s door</Text>
       <Text style={s.name}>{h.name}</Text>
       <Text style={s.headline}>{step ?? `Open ${h.name.toLowerCase()} and look`}</Text>
       {line && <Text style={s.quote}>“{line.text}”</Text>}
@@ -79,7 +79,7 @@ const makeStyles = (t: Theme) =>
   StyleSheet.create({
     card: { backgroundColor: t.surface, borderRadius: 16, padding: 16, marginTop: 12, gap: 6 },
     collapsed: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, paddingHorizontal: 4 },
-    label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, color: t.textMuted },
+    label: { fontSize: 12, fontWeight: '700', color: t.textMuted },
     collapsedText: { flex: 1, fontSize: 14, color: t.textMuted },
     name: { fontSize: 14, color: t.textMuted },
     headline: { fontSize: 20, fontWeight: '700', color: t.text },

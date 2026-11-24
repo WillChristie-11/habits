@@ -148,7 +148,7 @@ const makeStyles = (t: Theme) =>
     center: { alignItems: 'center', justifyContent: 'center' },
     topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     close: { fontSize: 20, color: t.textMuted, width: 24 },
-    kicker: { fontSize: 13, fontWeight: '600', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+    kicker: { fontSize: 13, fontWeight: '600', color: t.textMuted },
     content: { paddingTop: 28, paddingBottom: 24, gap: 18 },
     h1: { fontSize: 24, fontWeight: '700', color: t.text, lineHeight: 30 },
     scale: { flexDirection: 'row', gap: 6 },
@@ -158,7 +158,7 @@ const makeStyles = (t: Theme) =>
     optLabel: { fontSize: 11, color: t.textMuted, marginTop: 2 },
     optTextOn: { color: t.onAccent },
     card: { backgroundColor: t.surface, borderRadius: 16, padding: 16 },
-    cardLabel: { fontSize: 12, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+    cardLabel: { fontSize: 12, fontWeight: '700', color: t.textMuted },
     step: { fontSize: 22, fontWeight: '600', color: t.text, marginTop: 6, lineHeight: 28 },
     ask: { fontSize: 15, color: t.text, fontWeight: '600' },
     input: {

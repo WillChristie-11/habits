@@ -194,7 +194,7 @@ const makeStyles = (t: Theme) =>
     stepBtnText: { fontSize: 20, color: t.text, marginTop: -2 },
     stepValue: { fontSize: 16, fontWeight: '600', color: t.text, minWidth: 70, textAlign: 'center' },
     labelRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 22, marginBottom: 8, gap: 8 },
-    label: { fontSize: 13, fontWeight: '600', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+    label: { fontSize: 13, fontWeight: '600', color: t.textMuted },
     hint: { fontSize: 12, color: t.textMuted },
     help: { fontSize: 13, color: t.textMuted, lineHeight: 18 },
     input: {

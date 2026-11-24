@@ -62,7 +62,7 @@ export function WeekIntentionEditor({ week, onClose }: { week: string; onClose()
 const makeStyles = (t: Theme) =>
   StyleSheet.create({
     line: { marginTop: 10, paddingHorizontal: 4, paddingVertical: 4 },
-    label: { fontSize: 12, fontWeight: '700', color: t.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
+    label: { fontSize: 12, fontWeight: '700', color: t.textMuted },
     text: { fontSize: 18, fontWeight: '600', color: t.text, marginTop: 2, lineHeight: 24 },
     invite: { fontSize: 14, color: t.textMuted, fontWeight: '500' },
     wrap: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: t.scrim },

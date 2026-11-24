@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useShowHints } from '../components/useShowHints';
 import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useStore } from '../store';
@@ -245,6 +246,7 @@ function ItemRow({ h }: { h: Habit }) {
 
 /** Today and tomorrow, in time order, with what each will say. Swipe left to silence one. */
 function Upcoming() {
+  const showHints = useShowHints();
   const s = useThemedStyles(makeStyles);
   const store = useStore();
   const { settings, updateReminders, ctx } = store;
@@ -339,7 +341,7 @@ function Upcoming() {
           </View>
         );
       })}
-      {rows.some((x) => x.kind === 'one') && <Help>Swipe left on one to silence just that time.</Help>}
+      {showHints && rows.some((x) => x.kind === 'one') && <Help>Swipe left on one to silence just that time.</Help>}
     </View>
   );
 }
@@ -360,7 +362,7 @@ const makeStyles = (t: Theme) =>
     itemName: { flex: 1, fontSize: 16, fontWeight: '600', color: t.text },
     up: { flexDirection: 'row', gap: 12, backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8 },
     upTime: { width: 72, fontSize: 15, fontWeight: '600', color: t.text, fontVariant: ['tabular-nums'] },
-    upGroup: { fontSize: 12, fontWeight: '600', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+    upGroup: { fontSize: 12, fontWeight: '600', color: t.textMuted },
     upTitle: { fontSize: 15, color: t.text, marginTop: 2 },
     upBody: { fontSize: 14, color: t.textMuted, marginTop: 2 },
   });

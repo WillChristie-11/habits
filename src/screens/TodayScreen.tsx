@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '../store';
 import { counts, dayCompletion, isCutBack, nextAnchor, stateOn, todayGroups, visibleOn } from '../lib/schedule';
 import { router } from 'expo-router';
+import { useShowHints } from '../components/useShowHints';
 import { fromKey } from '../lib/dates';
 import { ProgressRing } from '../components/ProgressRing';
 import { SectionBlock } from '../components/SectionBlock';
@@ -40,6 +41,7 @@ export function TodayScreen() {
   const isToday = date === ctx.today;
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const actions = useHabitActions(date);
+  const showHints = useShowHints();
 
   const items = useMemo(() => habits.filter((h) => counts(h) || h.kind === 'anchor'), [habits]);
   const tracked = useMemo(() => items.filter(counts), [items]);
@@ -190,8 +192,8 @@ export function TodayScreen() {
             }
           />
         )}
-        {!empty && isToday && (
-          <Text style={s.hint}>Swipe right to skip or get ready · left to delete · hold and drag to reorder</Text>
+        {!empty && isToday && showHints && (
+          <Text style={s.hint}>Swipe right for Edit or Skip · left to delete · hold and drag to reorder</Text>
         )}
       </ScrollView>
 
@@ -222,8 +224,6 @@ const makeStyles = (t: Theme) =>
       fontSize: 12,
       fontWeight: '600',
       color: t.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
     },
     notTodayList: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 6 },
     notTodayItem: { fontSize: 14, color: t.textMuted, textDecorationLine: 'underline' },
@@ -249,8 +249,6 @@ const makeStyles = (t: Theme) =>
       fontSize: 13,
       fontWeight: '600',
       color: t.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
       marginTop: 22,
       marginBottom: 8,
       marginLeft: 4,

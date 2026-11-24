@@ -280,8 +280,6 @@ const makeStyles = (t: Theme) =>
       fontSize: 12,
       fontWeight: '600',
       color: t.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
     },
     cardText: { fontSize: 16, color: t.text, marginTop: 4, lineHeight: 22 },
     week: {

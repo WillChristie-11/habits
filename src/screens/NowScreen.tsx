@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useShowHints } from '../components/useShowHints';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -22,6 +23,7 @@ const STROKE = 4;
  * Tap anywhere or swipe up for Today.
  */
 export function NowScreen() {
+  const showHints = useShowHints();
   const s = useThemedStyles(makeStyles);
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -121,9 +123,11 @@ export function NowScreen() {
           This week is for {intention}
         </Text>
       )}
-      <Text style={s.hint} pointerEvents="none">
-        Tap or swipe up for Today
-      </Text>
+      {showHints && (
+        <Text style={s.hint} pointerEvents="none">
+          Tap or swipe up for Today
+        </Text>
+      )}
     </View>
   );
 }

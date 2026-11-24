@@ -135,7 +135,7 @@ const makeStyles = (t: Theme) =>
       marginBottom: 6,
       marginHorizontal: 4,
     },
-    title: { fontSize: 13, fontWeight: '600', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+    title: { fontSize: 13, fontWeight: '600', color: t.textMuted },
     plus: { fontSize: 20, color: t.accent, fontWeight: '600' },
     invite: { marginTop: 10, paddingHorizontal: 4, paddingVertical: 4 },
     inviteText: { fontSize: 14, color: t.textMuted, fontWeight: '500' },

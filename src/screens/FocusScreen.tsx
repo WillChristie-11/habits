@@ -344,7 +344,7 @@ const makeStyles = (t: Theme) =>
     hide: { position: 'absolute', left: 18, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
     hideText: { color: t.text, fontSize: 30, lineHeight: 30 },
     body: { flex: 1, alignItems: 'center', paddingHorizontal: 24, marginTop: -24, gap: 10 },
-    kicker: { color: t.textMuted, fontSize: 14, fontWeight: '600', letterSpacing: 0.4 },
+    kicker: { color: t.textMuted, fontSize: 14, fontWeight: '600' },
     clock: { color: t.text, fontSize: 72, fontWeight: '200', fontVariant: ['tabular-nums'] },
     clockWords: { fontSize: 40, marginVertical: 16 },
     line: { color: t.text, fontSize: 17, textAlign: 'center', alignSelf: 'stretch', paddingVertical: 4 },

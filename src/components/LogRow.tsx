@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useShowHints } from './useShowHints';
 import {
   ActionSheetIOS,
   Alert,
@@ -112,6 +113,7 @@ function LogSheetBody({
   onNew(): void;
   onDelete(h: Habit): void;
 }) {
+  const showHints = useShowHints();
   const s = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { habits, idx, ctx, logActivity, unmark } = useStore();
@@ -237,7 +239,9 @@ function LogSheetBody({
               <Text style={s.tileName}>New</Text>
             </Pressable>
           </View>
-          {activities.length > 0 && <Text style={s.hint}>Tap to log now · hold for Edit, another day or Delete</Text>}
+          {activities.length > 0 && showHints && (
+            <Text style={s.hint}>Tap to log now · hold for Edit, another day or Delete</Text>
+          )}
 
           {history.length > 0 && (
             <View style={{ marginTop: 22 }}>
@@ -457,8 +461,6 @@ const makeStyles = (t: Theme) =>
       fontSize: 13,
       fontWeight: '600',
       color: t.textMuted,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
       marginLeft: 4,
     },
     day: { fontSize: 14, fontWeight: '700', color: t.text, marginBottom: 6, marginLeft: 4 },
