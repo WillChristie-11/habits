@@ -1,5 +1,9 @@
-// The Now page: what the opening screen says at this moment. Pure; tested. Never shows %,
-// misses, flags or behind-pace.
+// The Now page: what the opening screen says at this moment, and in which layout and colour.
+// Pure; tested. Never shows %, misses, flags or behind-pace.
+//   A (morning, amber):  "Good morning. Working toward" + the goal large, today's step, first item
+//   B (anchor, blue; evening, violet): time left large, the next item, Done / Start + Get ready
+//   C (free time, blue): "Free time", three picks
+//   done: "You're done for today." and a one-line summary
 import type { Habit, ReminderSettings } from '../types';
 import { formatDuration, formatTime, weekDays, weekStart } from './dates';
 import { counts, stateOn, todayGroups, toMinutes, visibleOn, type Ctx, type RecordIndex } from './schedule';
@@ -7,20 +11,37 @@ import { nudgeStart } from './reminders';
 import { habitTimerButtons, isMeditateHabit } from './timers';
 
 export type NowKind = 'morning' | 'anchor' | 'free' | 'evening' | 'done';
+export type NowTone = 'morning' | 'day' | 'evening';
+export type NowLayout = 'A' | 'B' | 'C' | 'done';
 
-/** A button: check the item off, start one of its timers (0 main, 1 second), or write. */
+/** Done (want habits) or Start (avoid: its Focus round), Get ready (Clear head · 5), a free-time pick, or the journal. */
 export type NowAction =
   | { kind: 'done'; habitId: number; label: string }
+  | { kind: 'start'; habitId: number; label: string }
+  | { kind: 'getReady'; habitId: number; label: string }
   | { kind: 'timer'; habitId: number; which: 0 | 1; label: string }
   | { kind: 'focus'; label: string }
   | { kind: 'journal'; label: string };
 
+export interface NowItem {
+  habitId: number;
+  /** the item's name (avoid habits: their next ladder step) */
+  text: string;
+  /** shown on the card for items with a timer of their own (a meditation habit: 10) */
+  minutes: number | null;
+}
+
 export interface NowContent {
   kind: NowKind;
+  tone: NowTone;
+  layout: NowLayout;
+  /** small line above the big one ("Good morning. Working toward") */
+  kicker: string | null;
   big: string;
   small: string | null;
-  /** the open item the buttons are for (avoid habits: their next step) */
-  item: string | null;
+  /** label over the item card ("First up, after Wake up", "Next in Work block") */
+  itemLabel: string | null;
+  item: NowItem | null;
   /** During an anchor: its window in minutes of the day, for the ring. */
   ring: { start: number; end: number } | null;
   actions: NowAction[];
@@ -28,25 +49,23 @@ export interface NowContent {
 
 const isAvoid = (h: Habit) => h.kind === 'habit' && h.habit_kind === 'avoid';
 const isWant = (h: Habit) => h.kind === 'habit' && h.habit_kind === 'want';
-const itemText = (h: Habit) => (isAvoid(h) ? (h.ladder[h.ladder_index] ?? h.name) : h.name);
+const hm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
-/** Done (or its avoid-habit timer) plus the habit's other timer (Clear head · 5, or Meditate · 10). */
+/** The item card: name (avoid: next step) and, for items with their own timer, its minutes. */
+export function nowItem(h: Habit): NowItem {
+  const main = habitTimerButtons(h)[0];
+  return {
+    habitId: h.id,
+    text: isAvoid(h) ? (h.ladder[h.ladder_index] ?? h.name) : h.name,
+    minutes: isAvoid(h) || isMeditateHabit(h) ? main.minutes : null,
+  };
+}
+
+/** Done (or Start for an avoid habit: its Focus round) and Get ready (Clear head · 5 first). */
 export function itemActions(h: Habit): NowAction[] {
-  const timers = habitTimerButtons(h);
-  if (isAvoid(h)) {
-    const focus = timers.findIndex((b) => b.kind === 'focus') as 0 | 1;
-    const clear = timers.findIndex((b) => b.clearHead);
-    return [
-      { kind: 'timer', habitId: h.id, which: focus, label: timers[focus].label },
-      ...(clear >= 0
-        ? [{ kind: 'timer' as const, habitId: h.id, which: clear as 0 | 1, label: timers[clear].label }]
-        : []),
-    ];
-  }
-  const second = isMeditateHabit(h) ? 0 : 1;
   return [
-    { kind: 'done', habitId: h.id, label: 'Done' },
-    { kind: 'timer', habitId: h.id, which: second, label: timers[second].label },
+    isAvoid(h) ? { kind: 'start', habitId: h.id, label: 'Start' } : { kind: 'done', habitId: h.id, label: 'Done' },
+    { kind: 'getReady', habitId: h.id, label: 'Get ready' },
   ];
 }
 
@@ -67,10 +86,7 @@ export function daySummary(habits: Habit[], idx: RecordIndex, date: string): str
   return parts.length ? parts.join(' · ') : null;
 }
 
-/**
- * Want habits and activities still open today for "Free time. Pick one:", the ones done least
- * this week first, at most three.
- */
+/** Want habits and activities still open today, the ones done least this week first (at most 3). */
 export function freePicks(habits: Habit[], idx: RecordIndex, ctx: Ctx, max = 3): Habit[] {
   const week = weekDays(weekStart(ctx.today)).filter((d) => d < ctx.today);
   const doneThisWeek = (h: Habit) => week.filter((d) => idx.get(h.id)?.get(d)?.status === 'done').length;
@@ -86,40 +102,58 @@ export function freePicks(habits: Habit[], idx: RecordIndex, ctx: Ctx, max = 3):
     .map((x) => x.h);
 }
 
+/** Amber in the morning, blue through the day, violet from the evening nudge. */
+export function toneAt(nowMin: number, r: ReminderSettings): NowTone {
+  if (nowMin >= toMinutes(nudgeStart(r))) return 'evening';
+  return nowMin < 12 * 60 ? 'morning' : 'day';
+}
+
 export function nowContent(args: {
   habits: Habit[];
   idx: RecordIndex;
   ctx: Ctx;
   now: Date;
   r: ReminderSettings;
-  intention: string | null;
+  /** the goal to show in the morning (the first goal) */
+  goal: string | null;
 }): NowContent {
-  const { habits, idx, ctx, now, r, intention } = args;
+  const { habits, idx, ctx, now, r, goal } = args;
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const visible = (h: Habit) => visibleOn(h, idx, ctx);
   const open = (h: Habit) => stateOn(h, idx, ctx.today, ctx) === 'pending';
   const groups = todayGroups(habits, visible);
   const anchors = groups.anchors.filter((g) => g.anchor.scheduled_time);
   const items = habits.filter((h) => visible(h) && (h.kind === 'anchor' || counts(h)));
-  const empty = { item: null, ring: null, actions: [] as NowAction[] };
+  const base = { kicker: null, itemLabel: null, item: null, ring: null, actions: [] as NowAction[] };
+  const forItem = (h: Habit | null | undefined) => (h ? { item: nowItem(h), actions: itemActions(h) } : {});
 
   // Everything done today.
   if (items.length && !items.some(open)) {
-    return { ...empty, kind: 'done', big: 'You’re done for today.', small: daySummary(habits, idx, ctx.today) };
+    return {
+      ...base,
+      kind: 'done',
+      tone: toneAt(nowMin, r),
+      layout: 'done',
+      big: 'You’re done for today.',
+      small: daySummary(habits, idx, ctx.today),
+    };
   }
 
-  // Evening, from the evening nudge's start: what's left, and the journal.
+  // Evening, from the evening nudge's start: time until the deadline, what's next, the journal.
+  const deadline = toMinutes(r.eveningDeadline);
   if (nowMin >= toMinutes(nudgeStart(r))) {
-    const left = habits.filter((h) => visible(h) && counts(h) && open(h)).map((h) => h.name);
-    const small = left.length
-      ? `Left: ${left.slice(0, 3).join(', ')}${left.length > 3 ? ` +${left.length - 3} more` : ''}`
-      : null;
+    const left = habits.filter((h) => visible(h) && counts(h) && open(h));
+    const next = left[0];
     return {
-      ...empty,
+      ...base,
       kind: 'evening',
-      big: 'Wind down',
-      small,
-      actions: [{ kind: 'journal', label: 'Write in journal' }],
+      tone: 'evening',
+      layout: 'B',
+      big: nowMin < deadline ? formatDuration(deadline - nowMin) : 'Wind down',
+      small: nowMin < deadline ? `until ${formatTime(r.eveningDeadline)} · wind down` : 'The day is nearly done.',
+      itemLabel: next ? (left.length > 1 ? `Left tonight · ${left.length - 1} more after this` : 'Left tonight') : null,
+      ...forItem(next),
+      actions: [...(next ? itemActions(next) : []), { kind: 'journal', label: 'Write in journal' }],
     };
   }
 
@@ -131,18 +165,20 @@ export function nowContent(args: {
     const end = a.end_time ? toMinutes(a.end_time) : next ? toMinutes(next.anchor.scheduled_time!) : 24 * 60;
     return { start, end };
   };
-  const firstOpen = (i: number) => anchors[i].rows.map((r) => r.habit).find((h) => counts(h) && open(h)) ?? null;
-  const forItem = (h: Habit | null) =>
-    h ? { item: itemText(h), actions: itemActions(h) } : { item: null, actions: [] };
+  const firstOpen = (i: number) => anchors[i].rows.map((x) => x.habit).find((h) => counts(h) && open(h)) ?? null;
 
-  // Morning: before the first anchor ends, the weekly intention and the first open item under it.
+  // Morning: before the first anchor's window ends.
   if (anchors.length && nowMin < windowOf(0).end) {
     const h = firstOpen(0);
     return {
-      ...empty,
+      ...base,
       kind: 'morning',
-      big: intention?.trim() || 'Good morning',
-      small: h ? `First: ${h.name}` : null,
+      tone: 'morning',
+      layout: 'A',
+      kicker: goal ? 'Good morning. Working toward' : null,
+      big: goal ?? 'Good morning',
+      small: null,
+      itemLabel: h ? `First up, after ${anchors[0].anchor.name}` : null,
       ...forItem(h),
     };
   }
@@ -155,13 +191,15 @@ export function nowContent(args: {
   if (i >= 0) {
     const w = windowOf(i);
     const h = firstOpen(i);
-    const endHm = `${String(Math.floor(w.end / 60)).padStart(2, '0')}:${String(w.end % 60).padStart(2, '0')}`;
     return {
-      ...empty,
+      ...base,
       kind: 'anchor',
-      big: anchors[i].anchor.name,
-      small: `until ${formatTime(endHm)} · ${formatDuration(w.end - nowMin)} left`,
+      tone: toneAt(nowMin, r),
+      layout: 'B',
+      big: formatDuration(w.end - nowMin),
+      small: `left in ${anchors[i].anchor.name} · until ${formatTime(hm(w.end))}`,
       ring: w,
+      itemLabel: h ? `Next in ${anchors[i].anchor.name}` : null,
       ...forItem(h),
     };
   }
@@ -169,9 +207,11 @@ export function nowContent(args: {
   // Free time: three open want habits or activities.
   const picks = freePicks(habits, idx, ctx);
   return {
-    ...empty,
+    ...base,
     kind: 'free',
-    big: 'Free time.',
+    tone: toneAt(nowMin, r),
+    layout: 'C',
+    big: 'Free time',
     small: picks.length ? 'Pick one:' : 'Nothing open right now.',
     actions: picks.map((h) =>
       h.kind === 'activity'

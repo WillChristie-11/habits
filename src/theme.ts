@@ -149,3 +149,42 @@ export function useThemedStyles<T>(factory: (t: Theme) => T): T {
 }
 
 export const radius = 12;
+
+/**
+ * The Now page's time-of-day palettes (dark whatever the app theme): amber in the morning, blue
+ * through the day, violet in the evening. `rings` are the three circles of the "sun", outer first.
+ */
+export const nowPalettes = {
+  morning: {
+    background: '#1C1712',
+    rings: ['#3A2C1D', '#5C4628', '#B08548'],
+    accent: '#F0B25C',
+    onAccent: '#2A1C08',
+    text: '#FFFFFF',
+    muted: '#CBBBA4',
+    card: '#2A231B',
+    outline: 'rgba(240,178,92,0.45)',
+  },
+  day: {
+    background: '#111821',
+    rings: ['#1D2B3B', '#2B4560', '#5B87B5'],
+    accent: '#7EB6F0',
+    onAccent: '#0C1A2A',
+    text: '#FFFFFF',
+    muted: '#AFC0D3',
+    card: '#1B2431',
+    outline: 'rgba(126,182,240,0.45)',
+  },
+  evening: {
+    background: '#16121F',
+    rings: ['#2A2140', '#423366', '#7E62B8'],
+    accent: '#B79CF2',
+    onAccent: '#1C1230',
+    text: '#FFFFFF',
+    muted: '#C2B6DA',
+    card: '#221B30',
+    outline: 'rgba(183,156,242,0.45)',
+  },
+} as const;
+
+export type NowPalette = (typeof nowPalettes)[keyof typeof nowPalettes];
